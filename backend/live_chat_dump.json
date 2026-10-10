@@ -1,0 +1,82 @@
+{
+  "SPI / CPI": {
+    "query": "احسبلي مؤشرات الأداء الـ SPI والـ CPI وموقف المشروع الحالي",
+    "response": "أهلاً بك يا فندم. بناءً على بيانات التحكم بالمشروع المعتمدة حتى تاريخ **4 أكتوبر 2026 (Data Date: 2026-10-04)**، إليك تحليل مؤشرات القيمة المكتسبة (EVM) وموقف المشروع الحالي بالتفصيل:\n\n---\n\n### 📊 1. مؤشرات الأداء الرئيسية (Performance Indices):\n\n* **مؤشر أداء الجدول الزمني (SPI - Schedule Performance Index):**\n  $$\\text{SPI} = \\frac{\\text{EV}}{\\text{PV}} = \\frac{350,000}{425,000} = \\mathbf{0.824}$$\n  * **الحالة:** **متأخر عن البرنامج الزمني (Behind Schedule)**. القيمة أقل من 1.0، مما يعني أن معدل الإنجاز الفعلي يسير بنحو 82.4% فقط من المعدل المخطط له.\n\n* **مؤشر أداء التكلفة (CPI - Cost Performance Index):**\n  $$\\text{CPI} = \\frac{\\text{EV}}{\\text{AC}} = \\frac{350,000}{357,000} = \\mathbf{0.980}$$\n  * **الحالة:** **مطابق تقريباً للميزانية (On Budget)** مع حيود طفيف جداً، حيث نحصل على عائد قدره 0.98 دولار لكل دولار تم صرفه فعلياً.\n\n---\n\n### 📈 2. الأرقام الأساسية للمشروع (Baseline & Variances):\n* **القيمة المخططة (Planned Value - PV):** $425,000.00\n* **القيمة المكتسبة (Earned Value - EV):** $350,000.00\n* **التكلفة الفعلية (Actual Cost - AC):** $357,000.00\n* **حيود الجدول الزمني (Schedule Variance - SV):** **-$75,000.00** (عجز في حجم الأعمال المنجزة).\n* **حيود التكلفة (Cost Variance - CV):** **-$7,000.00** (فارق طفيف بين المنفذ والمصروف).\n\n---\n\n### 🔍 3. تقييم موقف المشروع الحالي والتوقعات (Forecasting):\n1. **الموقف الزمني (Schedule Health):** المشكلة الرئيسية حالياً تكمن في **التأخير الزمني** (SV = -$75,000 / SPI = 0.824). هناك 6 بنود محملة بالتكاليف تم تحليلها، وتتطلب مراجعة المسار الحرج (Critical Path).\n2. **الموقف المالي (Cost Health):** التكلفة تحت السيطرة بشكل جيد جداً (CPI = 0.980).\n3. **مؤشرات الاستكمال (Forecasts):**\n   * **التكلفة التقديرية عند الاكتمال (EAC):** **$433,500.00**\n   * **المبلغ المطلوب للاكتمال (ETC):** **$76,500.00**\n   * **الحيود المتوقع عند النهاية (VAC):** **-$8,500.00** (تجاوز متوقع بسيط في الميزانية الإجمالية).\n   * **مؤشر الأداء المطلوب للمتبقي (TCPI):** **1.103** (يتطلب تحسين كفاءة التنفيذ بنسبة ~10% لإغلاق المشروع ضمن الميزانية الأساسية).\n\n---\n\n💡 **التوصية الهندسية:**\nنحتاج للتركيز الفوري على مراجعة جدول الـ **Look Ahead** للأسابيع القادمة وإعداد **خطة استدراكية (Delay Recovery Plan / Fast-Tracking)** للأنشطة المتأخرة على المسار الحرج لتعويض الـ $75,000 المتأخرة، مع الحفاظ على نفس كفاءة الصرف الحالية. \n\nإذا أردت، يمكنني استخراج الأنشطة الحرجة المتسببة في التأخير أو صياغة إيميل رسمي لمدير المشروع للتنبيه.",
+    "action_required": null,
+    "sources": [
+      {
+        "title": "Live EVM Engine (BAC, PV, EV, AC, SPI, CPI)",
+        "category": "Schedule",
+        "type": "Deterministic EVM"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  },
+  "QA/QC Contact": {
+    "query": "مين مسؤول الـ QA/QC ورقم تليفونه؟",
+    "response": "مسؤول الـ **QA/QC** في المشروع هي:\n\n* **الاسم:** م. نورهان طارق (Eng. Nourhan Tarek)\n* **المسمى الوظيفي:** QA/QC Quality Manager\n* **رقم التليفون:** `+20 102 345 6789`\n* **البريد الإلكتروني:** `nourhan.qc@company.com`\n\nلو محتاج ننسق معاها بخصوص أي **NCR** أو طلبات فحص استلامات الموقع (**SIR/MIR**)، بلغني فوراً.",
+    "action_required": null,
+    "sources": [
+      {
+        "title": "Project Organization Chart & Directory",
+        "category": "Staff",
+        "type": "HR Database"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  },
+  "Rebar / Concrete Log": {
+    "query": "شوفلي سجل توريدات خرسانة اللبشة وحديد التسليح وحالة الفحص",
+    "response": "بناءً على قاعدة البيانات المحدثة للأنشطة الموقعية بتاريخ **2026-10-04**، إليك الموقف التنفيذي الخاص بخرسانة اللبشة وحديد التسليح:\n\n---\n\n### 1. صب خرسانة اللبشة (Raft Foundation Concrete Pouring Zone B)\n* **كود النشاط:** `[ACT-1010]` (WBS: 1.02.01 Substructure / Foundation)\n* **الجدول الزمني:** من **2026-10-01** إلى **2026-10-06**\n* **حالة النشاط:** قيد التنفيذ (**In Progress**)\n* **فريق العمل / المورد:** المقاولون العرب وفريق الخرسانة الجاهزة (`Arab Contractors & ReadyMix Team`)\n* **مؤشرات القيمة المكتسبة (EVM):**\n  * القيمة المخططة (**PV**): **$120,000.00**\n  * القيمة المكتسبة (**EV**): **$115,000.00**\n\n---\n\n### 2. حديد تسليح الكور (Core Wall Reinforcement Steel Fixing Floor 1)\n* **كود النشاط:** `[ACT-1020]` (WBS: 1.03.01 Superstructure / Vertical Elements)\n* **الجدول الزمني:** من **2026-10-04** إلى **2026-10-12**\n* **حالة النشاط:** قيد التنفيذ (**In Progress**)\n* **فريق العمل / مقاول الباطن:** مقاول باطن حديد التسليح طاقم 3 (`Steel Rebar Subcontractor Team 3`)\n* **مؤشرات القيمة المكتسبة (EVM):**\n  * القيمة المخططة (**PV**): **$85,000.00**\n  * القيمة المكتسبة (**EV**): **$80,000.00**\n\n---\n\n### ⚠️ بخصوص سجل التوريدات وأذون الفحص (MIR / Delivery Notes):\nالبيانات الحالية المتاحة في النظام تغطي **الجدول الزمني ونسب الإنجاز (EVM)** للأنشطة أعلاه فقط. \n\nتفاصيل **أذون استلام المواد (Delivery Notes - DN)**، و**طلبات فحص المواد (Material Inspection Requests - MIR)**، أو نتائج **تكسير مكعبات الخرسانة (Concrete Compressive Strength Tests)** غير مسجلة ضمن هذه القائمة المباشرة. إذا أردت، يمكنني الاستعلام عنها من سجلات الـ QA/QC وإدارة المشتريات فور ربطها أو تزويدي بسجلاتها.",
+    "action_required": null,
+    "sources": [
+      {
+        "title": "Primavera P6 Activity Schedule",
+        "category": "Schedule",
+        "type": "Database"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  },
+  "Email Request": {
+    "query": "ابعت إيميل لمهندس الموقع شريف بخصوص صبة القواعد",
+    "response": "⚠️ **Action Required**: 📧 Email Dispatch Request to sherif.site@company.com\n\nPlease review the action details below and click **Approve** or **Edit**.",
+    "action_required": {
+      "type": "ACTION_REQUIRED",
+      "action_id": "act_mail_a70954f9",
+      "tool": "send_notification_email",
+      "parameters": {
+        "to": "sherif.site@company.com",
+        "subject": "Project Update: Site Milestones & Schedule Review",
+        "body": "Dear Eng. Sherif,\n\nPlease review the updated progress report and ongoing foundation pouring activities.\n\nBest regards,\nSmart Assistant PM"
+      },
+      "preview_title": "📧 Email Dispatch Request to sherif.site@company.com",
+      "preview_details": {
+        "Recipient": "sherif.site@company.com",
+        "Subject": "Project Update: Site Milestones & Schedule Review",
+        "Preview": "Dear Eng. Sherif,\n\nPlease review the updated progress report and ongoing foundation pouring activities.\n\nBest regards,\nS..."
+      }
+    },
+    "sources": [
+      {
+        "title": "SMTP Dispatch Safety Layer",
+        "category": "HITL Actions",
+        "type": "Security"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  },
+  "Small Talk": {
+    "query": "كيفك يا باشمهندس؟ أخبارك إيه؟",
+    "response": "الحمد لله تمام وبخير يا باشمهندس! جاهز لمساعدتك في أي استفسار يخص الموقع، الجدول الزمني، مؤشرات الـ EVM، أو التوريدات. تحب نبدأ بإيه؟",
+    "action_required": null,
+    "sources": [
+      {
+        "title": "Smart Assistant Core",
+        "category": "General",
+        "type": "Conversational"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  }
+}

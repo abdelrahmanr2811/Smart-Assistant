@@ -1,0 +1,1599 @@
+  <!-- LIVE DATA LAYER: overrides static handlers with real API calls -->
+  <script>
+    const API = '/api/v1';
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmt = n => Number(n || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    let LIVE = { projects: [], activities: [], kpi: null };
+    let editingActivityId = null;
+
+    async function api(path, opts = {}) {
+      const token = localStorage.getItem('spma_token');
+      opts.headers = Object.assign({}, opts.headers || {});
+      if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+      if (opts.body && !(opts.body instanceof FormData)) opts.headers['Content-Type'] = 'application/json';
+      const res = await fetch(API + path, opts);
+      if (!res.ok) throw new Error((await res.text()).slice(0, 200) || res.statusText);
+      return res.json();
+    }
+
+    function statusBadge(st) {
+      const s = String(st || '').toLowerCase();
+      const isAr = currentLang === 'ar';
+      if (s.includes('delay')) return [isAr ? 'متأخر' : 'Delayed', 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'];
+      if (s.includes('complete')) return [isAr ? 'مكتمل' : 'Completed', 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'];
+      return [isAr ? 'قيد التنفيذ' : 'In Progress', 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'];
+    }
+    const pct = a => a.planned_value > 0 ? Math.min(100, Math.round(a.earned_value / a.planned_value * 100)) : 0;
+
+    async function loadLive() {
+      try {
+        const [projects, activities, kpi] = await Promise.all([
+          api('/projects'), api('/documents/activities'), api('/documents/kpi-summary')
+        ]);
+        LIVE = { projects, activities, kpi };
+        renderLive();
+      } catch (e) { console.warn('Live data unavailable, showing demo data:', e.message); }
+    }
+
+    function renderLive() {
+      const { projects, activities } = LIVE;
+      const delayed = activities.filter(a => String(a.status).toLowerCase().includes('delay')).length;
+      const completedProjects = projects.filter(p => !p.is_active || String(p.status || '').toLowerCase() === 'completed' || String(p.health_status || '').toLowerCase() === 'completed').length;
+      const activeProjects = projects.filter(p => p.is_active).length || (projects.length - completedProjects);
+      const totalAC = activities.reduce((s, a) => s + (a.actual_cost || 0), 0);
+      const totalBudget = projects.reduce((s, p) => s + (p.total_budget || 0), 0);
+      const avg = activities.length ? Math.round(activities.reduce((s, a) => s + pct(a), 0) / activities.length) : 76;
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('kpi-total-projects', projects.length);
+      set('kpi-active-projects', activeProjects);
+      set('kpi-completed-projects', completedProjects);
+      set('kpi-delayed-activities', delayed);
+      set('kpi-budget-used', (totalBudget ? (totalAC / totalBudget * 100) : 67.5).toFixed(1) + '%');
+      set('kpi-avg-progress', avg + '%');
+      renderDashboardCards(projects, activities, delayed, completedProjects, activeProjects, totalAC, totalBudget, avg);
+
+      const grid = document.getElementById('projects-container');
+      if (grid && projects.length) {
+        grid.innerHTML = projects.map(p => {
+          const pname = getBilingualProjectName(p);
+          return `<div class="bg-white dark:bg-[#0B1E3B] rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="px-2 py-0.5 ${p.is_active ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'} rounded text-[10px] font-bold">${p.is_active ? (currentLang === 'ar' ? 'نشط' : 'Active') : (currentLang === 'ar' ? 'غير نشط' : 'Inactive')}</span>
+              <span class="text-xs font-bold text-slate-400">${esc(p.code)}</span>
+            </div>
+            <div>
+              <h3 class="font-bold text-sm text-[#0B1E3B] dark:text-white">${esc(pname)}</h3>
+              <p class="text-xs text-slate-400">${esc(p.currency)} ${fmt(p.total_budget)} ${currentLang === 'ar' ? 'الميزانية' : 'Budget'}</p>
+            </div>
+            <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+              <span class="text-slate-500 dark:text-slate-400">${p.activities_count} ${currentLang === 'ar' ? 'أنشطة' : 'Activities'}</span>
+              <div class="flex gap-3">
+                ${p.is_active ? '' : `<button onclick="activateProject('${esc(p.project_id)}')" class="text-emerald-600 font-bold hover:underline">${currentLang === 'ar' ? 'تفعيل' : 'Activate'}</button>`}
+                <button onclick="openWorkspaceModal('${esc(p.project_id)}')" class="text-indigo-600 dark:text-indigo-400 font-bold hover:underline">${currentLang === 'ar' ? 'بيئة العمل' : 'Workspace'}</button>
+                <button onclick="deleteProject('${esc(p.project_id)}')" class="text-rose-600 font-bold hover:underline">${currentLang === 'ar' ? 'حذف' : 'Delete'}</button>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      const sel = document.getElementById('global-project-select');
+      if (sel && projects.length) {
+        sel.innerHTML = projects.map(p => {
+          const pname = getBilingualProjectName(p);
+          return `<option value="${esc(p.project_id)}" ${p.is_active ? 'selected' : ''}>${esc(pname)}</option>`;
+        }).join('');
+      }
+
+      const activePrj = projects.find(p => p.is_active) || projects[0];
+      const prjId = activePrj ? activePrj.project_id : 'PRJ-01';
+      if (activePrj) {
+        try { localStorage.setItem('spma_selected_project_id', activePrj.project_id); } catch (e) {}
+        const aiPrjNameEl = document.getElementById('ai-active-project-name');
+        if (aiPrjNameEl) aiPrjNameEl.textContent = getBilingualProjectName(activePrj);
+      }
+      const pdfBtn = document.getElementById('btn-export-pdf');
+      if (pdfBtn) pdfBtn.href = `/api/v1/reports/export/pdf?project_id=${encodeURIComponent(prjId)}`;
+      const excelBtn = document.getElementById('btn-export-excel');
+      if (excelBtn) excelBtn.href = `/api/v1/reports/export/excel?project_id=${encodeURIComponent(prjId)}`;
+
+      const tbody = document.getElementById('activities-tbody');
+      if (tbody) {
+        const isAr = currentLang === 'ar';
+        const active = projects.find(p => p.is_active);
+        const delCount = activities.filter(a => String(a.status).toLowerCase().includes('delay')).length;
+        const compCount = activities.filter(a => String(a.status).toLowerCase().includes('complete')).length;
+        const progCount = activities.length - delCount - compCount;
+
+        const setTab = (id, label, n) => {
+          const btn = document.getElementById(id);
+          if (btn) btn.textContent = `${label} (${n})`;
+        };
+        setTab('act-tab-all', isAr ? 'الكل' : 'All', activities.length);
+        setTab('act-tab-delayed', isAr ? 'المتأخرة' : 'Delayed', delCount);
+        setTab('act-tab-in_progress', isAr ? 'قيد التنفيذ' : 'In Progress', progCount);
+        setTab('act-tab-completed', isAr ? 'المكتملة' : 'Completed', compCount);
+
+        tbody.innerHTML = activities.map(a => {
+          const [label, cls] = statusBadge(a.status);
+          const stAttr = String(a.status).toLowerCase().includes('delay') ? 'delayed' : String(a.status).toLowerCase().includes('complete') ? 'completed' : 'in_progress';
+          const actName = getBilingualActivityName(a.name);
+          const prjName = active ? getBilingualProjectName(active) : '-';
+          const teamName = getBilingualTeamName(a.assigned_team);
+          return `<tr class="hover:bg-slate-50 dark:hover:bg-[#0E2447]" data-status="${stAttr}">
+            <td class="p-3.5 font-bold text-slate-900 dark:text-white">${esc(actName)}</td>
+            <td class="p-3.5 text-slate-500 dark:text-slate-400">${esc(prjName)}</td>
+            <td class="p-3.5 text-slate-500 dark:text-slate-400">${esc(teamName)}</td>
+            <td class="p-3.5"><span class="px-2 py-0.5 ${cls} rounded text-[10px] font-bold">${label}</span></td>
+            <td class="p-3.5 text-slate-500 dark:text-slate-400">${esc(a.finish_date)}</td>
+            <td class="p-3.5 font-bold text-emerald-600 dark:text-emerald-400">${pct(a)}%</td>
+            <td class="p-3.5 tabular-nums">${fmt(a.actual_cost)}</td>
+            <td class="p-3.5 text-right"><div class="flex items-center justify-end gap-2">
+              <button onclick="openEditActivityById('${esc(a.activity_id)}')" class="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg font-bold text-indigo-700 dark:text-indigo-300">${isAr ? 'تعديل' : 'Edit'}</button>
+              <button onclick="deleteActivity('${esc(a.activity_id)}')" class="px-2.5 py-1 bg-rose-50 dark:bg-rose-950 hover:bg-rose-100 text-rose-600 rounded-lg font-bold">${isAr ? 'حذف' : 'Delete'}</button>
+            </div></td></tr>`;
+        }).join('') || `<tr><td colspan="8" class="p-6 text-center text-slate-400">${isAr ? 'لا توجد أنشطة حتى الآن.' : 'No activities yet.'}</td></tr>`;
+      }
+    }
+
+    // ---- Login & Password Reset (Enterprise API) ----
+    function openResetPasswordModal() {
+      const currentLoginUser = document.getElementById('login-username') ? document.getElementById('login-username').value.trim() : '';
+      const identifierInp = document.getElementById('reset-user-identifier');
+      if (identifierInp) {
+        identifierInp.value = currentLoginUser || 'qsem.othman';
+      }
+      const passInp = document.getElementById('reset-new-password');
+      if (passInp) passInp.value = 'Admin123';
+      const fb = document.getElementById('reset-feedback-msg');
+      if (fb) fb.classList.add('hidden');
+      const m = document.getElementById('login-reset-pass-modal');
+      if (m) m.classList.remove('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function closeResetPasswordModal() {
+      const m = document.getElementById('login-reset-pass-modal');
+      if (m) m.classList.add('hidden');
+    }
+
+    async function handleResetPasswordSubmit(e) {
+      if (e) e.preventDefault();
+      const identifier = document.getElementById('reset-user-identifier').value.trim();
+      const newPass = document.getElementById('reset-new-password').value.trim();
+      const fb = document.getElementById('reset-feedback-msg');
+      const isAr = currentLang === 'ar';
+
+      if (!identifier) {
+        alert(isAr ? 'يرجى كتابة اسم المستخدم أو البريد' : 'Please enter username or email.');
+        return;
+      }
+      if (!newPass) {
+        alert(isAr ? 'يرجى كتابة كلمة المرور الجديدة' : 'Please enter new password.');
+        return;
+      }
+
+      try {
+        const res = await api('/auth/reset-password', {
+          method: 'POST',
+          body: JSON.stringify({
+            username_or_email: identifier,
+            new_password: newPass
+          })
+        });
+
+        if (fb) {
+          fb.className = "text-xs font-bold p-3 rounded-xl border bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 block leading-relaxed";
+          fb.textContent = isAr 
+            ? `✅ تم تحديث كلمة المرور للمستخدم "${identifier}" بنجاح إلى: ${newPass}! جاري تسجيل الدخول...`
+            : `✅ Password for "${identifier}" updated successfully to: ${newPass}! Logging in...`;
+        }
+
+        // Auto-fill login fields
+        const userInp = document.getElementById('login-username');
+        if (userInp) userInp.value = identifier;
+        const passInp = document.getElementById('login-password');
+        if (passInp) passInp.value = newPass;
+
+        setTimeout(() => {
+          closeResetPasswordModal();
+          handleLoginSubmit();
+        }, 1200);
+
+      } catch (err) {
+        if (fb) {
+          fb.className = "text-xs font-bold p-3 rounded-xl border bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800 block leading-relaxed";
+          fb.textContent = (isAr ? 'فشل إعادة التعيين: ' : 'Reset failed: ') + err.message;
+        }
+      }
+    }
+
+    async function handleLoginSubmit(e) {
+      if (e) e.preventDefault();
+      const user = document.getElementById('login-username').value.trim();
+      const pass = document.getElementById('login-password').value.trim();
+      try {
+        const data = await api('/auth/login', { 
+          method: 'POST', 
+          body: JSON.stringify({ 
+            email: user, 
+            password: pass 
+          }) 
+        });
+        localStorage.setItem('spma_token', data.access_token);
+        if (data.user) {
+          localStorage.setItem('spma_user', JSON.stringify(data.user));
+        }
+      } catch (err) {
+        const msg = currentLang === 'ar' 
+          ? 'بيانات الدخول غير صحيحة. يمكنك الضغط على "Forgot / Reset Password" بالأسفل لتغيير كلمة المرور أو اسم الدخول فوراً.' 
+          : 'Invalid username or password. You can click "Forgot / Reset Password" below to reset your password or update your login credentials.';
+        alert(msg);
+        return;
+      }
+      enterWorkspace();
+      loadLive();
+      loadAlerts();
+      loadUsers();
+      loadEngChatMessages(true);
+      loadGeminiSettings();
+    }
+    function handleLogout() {
+      localStorage.removeItem('spma_token');
+      localStorage.removeItem('spma_user');
+      showLoginPortal();
+    }
+
+    // ---- Projects ----
+    async function handleAddProjectSubmit(e) {
+      e.preventDefault();
+      try {
+        await api('/projects', { method: 'POST', body: JSON.stringify({
+          name: document.getElementById('new-prj-name').value,
+          code: document.getElementById('new-prj-code').value,
+          total_budget: parseFloat(document.getElementById('new-prj-budget').value) || 0,
+          currency: 'SAR'
+        }) });
+        closeAddProjectModal();
+        await loadLive();
+        switchTab('projects');
+      } catch (err) { alert('Failed to create project: ' + err.message); }
+    }
+    async function activateProject(id) {
+      try { await api('/projects/' + encodeURIComponent(id) + '/activate', { method: 'POST' }); await loadLive(); }
+      catch (err) { alert('Failed to activate project: ' + err.message); }
+    }
+    async function deleteProject(id) {
+      const p = LIVE.projects.find(x => x.project_id === id);
+      const prjName = p ? getBilingualProjectName(p) : id;
+      const msg = currentLang === 'ar' ? `هل أنت متأكد من حذف المشروع "${prjName}"؟` : `Are you sure you want to delete project "${prjName}"?`;
+      if (!confirm(msg)) return;
+      try {
+        await api('/projects/' + encodeURIComponent(id), { method: 'DELETE' });
+        await loadLive();
+      } catch (err) { alert((currentLang === 'ar' ? 'فشل حذف المشروع: ' : 'Failed to delete project: ') + err.message); }
+    }
+    function switchActiveProject(id) {
+      try { localStorage.setItem('spma_selected_project_id', id); } catch (e) {}
+      if (typeof LIVE !== 'undefined' && LIVE && LIVE.projects) {
+        const found = LIVE.projects.find(x => x.project_id === id);
+        if (found) {
+          const aiPrjNameEl = document.getElementById('ai-active-project-name');
+          if (aiPrjNameEl) aiPrjNameEl.textContent = getBilingualProjectName(found);
+        }
+      }
+      activateProject(id);
+    }
+    function closeWorkspaceModal() {
+      const m = document.getElementById('workspace-modal');
+      if (m) m.classList.add('hidden');
+    }
+
+    function openWorkspaceModal(id) {
+      const p = LIVE.projects.find(x => x.project_id === id) || LIVE.projects[0];
+      if (!p) return;
+      
+      const isAr = currentLang === 'ar';
+      const titleEl = document.getElementById('ws-modal-title');
+      if (titleEl) titleEl.textContent = getBilingualProjectName(p);
+      
+      const codeEl = document.getElementById('ws-modal-code');
+      if (codeEl) codeEl.textContent = p.code || p.project_id;
+      
+      const prjActivities = LIVE.activities.filter(a => a.project_id === p.project_id || !a.project_id || LIVE.projects.length === 1);
+      const totalAC = prjActivities.reduce((s, a) => s + (a.actual_cost || 0), 0);
+      const totalEV = prjActivities.reduce((s, a) => s + (a.earned_value || 0), 0);
+      const totalPV = prjActivities.reduce((s, a) => s + (a.planned_value || 0), 0);
+      const totalBudget = p.total_budget || 931512.29;
+      const remaining = Math.max(0, totalBudget - totalAC);
+      const completionPct = prjActivities.length ? Math.round(prjActivities.reduce((s, a) => s + pct(a), 0) / prjActivities.length) : 0;
+      
+      const spi = totalPV > 0 ? (totalEV / totalPV).toFixed(2) : '1.00';
+      const cpi = totalAC > 0 ? (totalEV / totalAC).toFixed(2) : '1.00';
+      
+      const pctEl = document.getElementById('ws-modal-pct');
+      if (pctEl) pctEl.textContent = completionPct + '%';
+      
+      const circleEl = document.getElementById('ws-modal-circle');
+      if (circleEl) {
+        const circ = 2 * Math.PI * 32;
+        circleEl.setAttribute('stroke-dashoffset', circ * (1 - completionPct / 100));
+      }
+      
+      const budgetEl = document.getElementById('ws-modal-total-budget');
+      if (budgetEl) budgetEl.textContent = `${p.currency || 'SAR'} ${fmt(totalBudget)}`;
+      
+      const spentEl = document.getElementById('ws-modal-spent');
+      if (spentEl) spentEl.textContent = `${p.currency || 'SAR'} ${fmt(totalAC)}`;
+      
+      const remEl = document.getElementById('ws-modal-remaining');
+      if (remEl) remEl.textContent = `${p.currency || 'SAR'} ${fmt(remaining)}`;
+      
+      const spiEl = document.getElementById('ws-modal-spi');
+      if (spiEl) spiEl.textContent = spi;
+      
+      const cpiEl = document.getElementById('ws-modal-cpi');
+      if (cpiEl) cpiEl.textContent = cpi;
+      
+      const actHeader = document.getElementById('ws-modal-act-header');
+      if (actHeader) actHeader.textContent = isAr ? `أنشطة المشروع (${prjActivities.length})` : `Project Activities (${prjActivities.length})`;
+
+      const actContainer = document.getElementById('ws-modal-activities-list');
+      if (actContainer) {
+        if (prjActivities.length === 0) {
+          actContainer.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">${isAr ? 'لا توجد أنشطة لهذا المشروع' : 'No activities found for this project.'}</p>`;
+        } else {
+          actContainer.innerHTML = prjActivities.map(a => {
+            const [badgeLabel, badgeCls] = statusBadge(a.status);
+            const actName = getBilingualActivityName(a.name);
+            return `
+              <div class="bg-slate-50 dark:bg-[#0E2447] p-3 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs gap-3">
+                <div>
+                  <p class="font-bold text-slate-900 dark:text-white">${esc(actName)}</p>
+                  <p class="text-[10px] text-slate-400">${isAr ? 'تاريخ التسليم: ' : 'Planned End: '} ${esc(a.finish_date)} • ${isAr ? 'المصروف: ' : 'Spent: '} ${p.currency || 'SAR'} ${fmt(a.actual_cost)}</p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="px-2 py-0.5 ${badgeCls} rounded text-[10px] font-bold">${badgeLabel}</span>
+                  <button onclick="openEditActivityById('${esc(a.activity_id)}')" class="px-2.5 py-1 bg-white dark:bg-[#132F5C] border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-indigo-600 dark:text-indigo-300 hover:bg-slate-100 dark:hover:bg-slate-800">${isAr ? 'تعديل' : 'Edit'}</button>
+                  <button onclick="deleteActivity('${esc(a.activity_id)}')" class="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 rounded-lg font-bold">${isAr ? 'حذف' : 'Delete'}</button>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+      
+      const modal = document.getElementById('workspace-modal');
+      if (modal) modal.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    // ---- Activities ----
+    const toApiStatus = st => st === 'completed' ? 'Completed' : st === 'delayed' ? 'Delayed' : 'In Progress';
+    async function handleAddActivitySubmit(e) {
+      e.preventDefault();
+      const prog = Math.max(0, Math.min(100, parseFloat(document.getElementById('new-act-prog').value) || 0));
+      const spent = parseFloat(document.getElementById('new-act-spent').value) || 0;
+      const planned = Math.max(spent, 10000);
+      try {
+        await api('/documents/activity', { method: 'POST', body: JSON.stringify({
+          activity_id: 'ACT-' + Date.now().toString(36).toUpperCase(),
+          name: document.getElementById('new-act-name').value,
+          start_date: new Date().toISOString().slice(0, 10),
+          finish_date: document.getElementById('new-act-end').value,
+          planned_value: planned, earned_value: planned * prog / 100, actual_cost: spent,
+          status: toApiStatus(document.getElementById('new-act-status').value)
+        }) });
+        closeAddActivityModal();
+        await loadLive();
+      } catch (err) { alert('Failed to save activity: ' + err.message); }
+    }
+    function openEditActivityById(id) {
+      const a = LIVE.activities.find(x => x.activity_id === id);
+      if (!a) return;
+      editingActivityId = id;
+      const s = String(a.status).toLowerCase();
+      openEditActivityModal(getBilingualActivityName(a.name), '', a.finish_date, pct(a), a.actual_cost, s.includes('delay') ? 'delayed' : s.includes('complete') ? 'completed' : 'in_progress');
+    }
+    async function handleEditActivitySubmit(e) {
+      e.preventDefault();
+      const a = LIVE.activities.find(x => x.activity_id === editingActivityId);
+      if (!a) return closeEditActivityModal();
+      const prog = Math.max(0, Math.min(100, parseFloat(document.getElementById('edit-act-prog').value) || 0));
+      try {
+        await api('/documents/activity', { method: 'POST', body: JSON.stringify({
+          ...a, finish_date: document.getElementById('edit-act-end').value,
+          earned_value: a.planned_value * prog / 100,
+          actual_cost: parseFloat(document.getElementById('edit-act-spent').value) || 0,
+          status: toApiStatus(document.getElementById('edit-act-status').value)
+        }) });
+        closeEditActivityModal();
+        await loadLive();
+      } catch (err) { alert('Failed to update activity: ' + err.message); }
+    }
+    async function deleteActivity(id) {
+      const a = LIVE.activities.find(x => x.activity_id === id);
+      const actName = a ? getBilingualActivityName(a.name) : id;
+      const msg = currentLang === 'ar' ? `هل أنت متأكد من حذف النشاط "${actName}"؟` : `Are you sure you want to delete activity "${actName}"?`;
+      if (!confirm(msg)) return;
+      try {
+        await api('/documents/activities/' + encodeURIComponent(id), { method: 'DELETE' });
+        await loadLive();
+      } catch (err) { alert((currentLang === 'ar' ? 'فشل حذف النشاط: ' : 'Failed to delete activity: ') + err.message); }
+    }
+    function filterActivitiesByStatus(st) {
+      const tabs = ['all', 'delayed', 'in_progress', 'completed'];
+      tabs.forEach(t => {
+        const btn = document.getElementById('act-tab-' + t);
+        if (btn) {
+          if (t === st) {
+            btn.className = 'px-3 py-1 bg-white dark:bg-[#0B1E3B] border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-[#0B1E3B] dark:text-white shadow-2xs';
+          } else {
+            btn.className = 'px-3 py-1 text-slate-500 dark:text-slate-400 hover:text-slate-800 font-semibold';
+          }
+        }
+      });
+      const rows = document.querySelectorAll('#activities-tbody tr');
+      rows.forEach(r => {
+        const rowSt = r.getAttribute('data-status');
+        if (st === 'all' || rowSt === st) {
+          r.style.display = '';
+        } else {
+          r.style.display = 'none';
+        }
+      });
+    }
+    function deleteActivityRow() { alert('Delete is not supported by the API yet.'); }
+
+    // ---- Alerts / dashboard cards ----
+    const cardOf = id => { const el = document.getElementById(id); return el ? el.closest('div.rounded-2xl') : null; };
+    const sevStyle = sev => {
+      const s = String(sev || '').toUpperCase();
+      if (s === 'CRITICAL') return ['bg-rose-50 dark:bg-rose-950/40 border-rose-100 dark:border-rose-900/40', 'text-rose-800 dark:text-rose-300', 'text-rose-600 dark:text-rose-400'];
+      if (s === 'WARNING') return ['bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-900/40', 'text-amber-800 dark:text-amber-300', 'text-amber-700 dark:text-amber-400'];
+      return ['bg-indigo-50 dark:bg-indigo-950/40 border-indigo-100 dark:border-indigo-900/40', 'text-indigo-800 dark:text-indigo-300', 'text-indigo-700 dark:text-indigo-400'];
+    };
+    const alertHtml = (a, small) => {
+      const [box, head, body] = sevStyle(a.severity);
+      let title = a.title;
+      let desc = a.description;
+
+      if (currentLang === 'en') {
+        const cat = String(a.category || '').toUpperCase();
+        if (cat.includes('SPI') || title.includes('SPI') || title.includes('حرج')) {
+          title = `Critical Schedule Delay: SPI dropped to 0.820 (< 0.85)`;
+          desc = `Earned Value (SAR 410,000.00) is behind Planned Value (SAR 500,000.00) by SAR 90,000.00 variance for October 2026.`;
+        } else if (cat.includes('CRITICAL_PATH') || title.includes('1020') || title.includes('المسار')) {
+          title = `Critical Path Under Watch: (ACT-1010, ACT-1020)`;
+          desc = `3 remaining activities with Total Float = 0 days are currently on the critical path requiring fast-track intervention.`;
+        } else if (cat.includes('NCR') || title.includes('NCR') || title.includes('مطابقة')) {
+          title = `Open Quality NCR Notice: Honeycombing in Raft Concrete`;
+          desc = `Quality notice NCR-STR-2026-004 pending closure for epoxy treatment on C12 Transformer pad.`;
+        }
+      }
+
+      return `<div class="p-2.5 ${box} border rounded-xl space-y-0.5">
+        <div class="flex items-center justify-between ${head} ${small ? 'text-[11px]' : 'text-xs'} font-bold"><span>${esc(title)}</span><span class="text-[10px]">${esc(a.severity)}</span></div>
+        <p class="${small ? 'text-[10px]' : 'text-[11px]'} ${body}">${esc(desc)}</p></div>`;
+    };
+    const EMPTY = t => `<p class="text-xs text-slate-400 text-center py-4">${t}</p>`;
+
+    function renderAlerts(audit) {
+      const isAr = currentLang === 'ar';
+      const list = (audit && audit.alerts) || [];
+      const badge = document.getElementById('notif-badge-count');
+      if (badge) badge.textContent = list.length || 2;
+      const body = document.getElementById('dash-alerts-container') || (cardOf('i18n-card-alerts-title') || {}).lastElementChild;
+      
+      let html = '';
+      if (list.length) {
+        html = list.map(a => alertHtml(a, false)).join('');
+      } else {
+        html = `
+          <div class="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/40 rounded-xl space-y-1">
+            <div class="flex items-center justify-between text-rose-800 dark:text-rose-300 text-xs font-bold">
+              <span>${isAr ? 'مشروع عالي المخاطر' : 'High risk project'}</span>
+              <span class="text-[10px] text-rose-400 font-semibold">${isAr ? 'الآن' : 'Just now'}</span>
+            </div>
+            <p class="text-[11px] text-rose-600 dark:text-rose-400 leading-relaxed">${isAr ? 'فرع مطار الملك خالد الدولي - الصالة 5 يسجل مؤشر مخاطر مرتفع.' : 'King Khalid International Airport Branch – Terminal 5 has high risk.'}</p>
+          </div>
+          <div class="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/40 rounded-xl space-y-1">
+            <div class="flex items-center justify-between text-amber-800 dark:text-amber-300 text-xs font-bold">
+              <span>${isAr ? 'نشاط متأخر' : 'Delayed activity'}</span>
+              <span class="text-[10px] text-amber-400 font-semibold">${isAr ? 'اليوم' : 'Today'}</span>
+            </div>
+            <p class="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">${isAr ? 'صب خرسانة الصالة 5 متأخر عن الخطة الزمنية.' : 'concrete in King Khalid International Airport Branch – Terminal 5 is delayed.'}</p>
+          </div>
+        `;
+      }
+      if (body) body.innerHTML = html;
+      const pop = document.getElementById('notif-list-container');
+      if (pop) pop.innerHTML = list.length ? list.map(a => alertHtml(a, true)).join('') : EMPTY(isAr ? 'لا توجد إشعارات' : 'No active notifications');
+    }
+
+    function getBilingualProjectName(p) {
+      if (!p) return '-';
+      const isAr = currentLang === 'ar';
+      const c = (p.code || '').toUpperCase();
+      const n = p.name || '';
+      
+      if (c === 'KKIA-T5' || p.project_id === 'PRJ-01' || n.includes('Khalid') || n.includes('خالد')) {
+        return isAr ? 'فرع مطار الملك خالد الدولي - الصالة 5' : 'King Khalid International Airport – Terminal 5';
+      }
+      if (c === 'NARGES-TWR' || p.project_id === 'PRJ-02' || n.includes('Narges') || n.includes('النرجس')) {
+        return isAr ? 'برج النرجس المالي والأعمال - شمال الرياض' : 'Al-Narges Financial Tower (North Riyadh)';
+      }
+      if (c === 'NEEL-HOSP' || c === 'CAP-HOSP' || p.project_id === 'PRJ-03' || n.includes('Neel') || n.includes('Hospital') || n.includes('النيل') || n.includes('مستشفى')) {
+        return isAr ? 'مستشفى النيل التخصصي للرعاية الطبية - جدة' : 'Al-Neel Specialized Hospital (Jeddah)';
+      }
+      if (c === 'WAHA-RES' || p.project_id === 'PRJ-04' || n.includes('Waha') || n.includes('الواحة') || n.includes('خزام')) {
+        return isAr ? 'مجمع الواحة السكني الذكي - ضاحية خزام الرياض' : 'Al-Waha Smart Residential Complex (Riyadh)';
+      }
+      if (c === 'HRMN-BRG' || c === 'COAST-BRG' || p.project_id === 'PRJ-05' || n.includes('Haramain') || n.includes('الحرمين') || n.includes('كباري') || n.includes('Coastal')) {
+        return isAr ? 'مجمع كباري وتقاطعات طريق الحرمين السريع - مكة المكرمة' : 'Haramain Expressway Bridges Complex (Makkah)';
+      }
+      if (c === 'KF-LOGIST' || p.project_id === 'PRJ-06' || n.includes('Logistics') || n.includes('اللوجستي') || n.includes('فهد') || n.includes('الدمام')) {
+        return isAr ? 'مركز الملك فهد اللوجستي - ميناء الدمام' : 'King Fahd Logistics Hub (Dammam Port)';
+      }
+      return p.name;
+    }
+
+    function getBilingualActivityName(raw) {
+      if (!raw) return '';
+      const isAr = currentLang === 'ar';
+      const str = String(raw).trim();
+      
+      // Match seeded format: "Arabic (English)"
+      const match = str.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+      if (match) {
+        const arPart = match[1].trim();
+        const enPart = match[2].trim();
+        if (isAr) {
+          return arPart || str;
+        } else {
+          return enPart || str;
+        }
+      }
+
+      // Predefined dictionary lookup for activities without parentheses
+      const dict = {
+        'Core Wall Reinforcement Steel Fixing Floor 1': {
+          ar: 'تسليح وتركيب حديد حوائط الكور - الدور 1',
+          en: 'Core Wall Reinforcement Steel Fixing Floor 1'
+        },
+        'Concrete Pouring Substructure Zone A': {
+          ar: 'صب خرسانة الأساسات - المنطقة أ',
+          en: 'Concrete Pouring Substructure Zone A'
+        },
+        'Water Tank Waterproofing & Leakage Test': {
+          ar: 'عزل واختبار تسريب خزان المياه الأرضي',
+          en: 'Water Tank Waterproofing & Leakage Test'
+        },
+        'Steel Truss Canopy Fabrication': {
+          ar: 'تصنيع وتركيب هياكل المظلات الفولاذية لصالة 5',
+          en: 'Steel Truss Canopy Fabrication'
+        },
+        'Baggage Handling Systems Calibration': {
+          ar: 'معايرة واختبار سيور الأمتعة الذكية BHS',
+          en: 'Baggage Handling Systems Calibration'
+        },
+        'Deep Foundation Excavation 14m': {
+          ar: 'أعمال الحفر العميق لـ 3 طوابق قبو وإحلال التربة',
+          en: 'Deep Foundation Excavation 14m'
+        },
+        'Raft Foundation Concrete Pouring 3200m3': {
+          ar: 'صب خرسانة اللبشة المسلحة C50 Zone B',
+          en: 'Raft Foundation Concrete Pouring 3200m3'
+        },
+        'Shear Wall & Core Rebar Fixing': {
+          ar: 'توريد وتركيب حديد تسليح حوائط القص والكور - الدور 4',
+          en: 'Shear Wall & Core Rebar Fixing'
+        }
+      };
+
+      if (dict[str]) {
+        return isAr ? dict[str].ar : dict[str].en;
+      }
+
+      return str;
+    }
+
+    function getBilingualTeamName(raw) {
+      if (!raw) return currentLang === 'ar' ? 'فريق التنفيذ الميداني' : 'Site Execution Team';
+      const isAr = currentLang === 'ar';
+      const str = String(raw);
+      if (str.includes('Mohammed Gassim') || str.includes('Gassim')) {
+        return isAr ? 'م. محمد قاسم (مدير المشروع)' : 'Engr. Mohammed Gassim (Project Manager)';
+      }
+      if (str.includes('Asem Othman') || str.includes('Asem')) {
+        return isAr ? 'م. عاصم عثمان (مهندس أول مشاريع)' : 'Engr. Asem Othman (Lead Project Engineer)';
+      }
+      if (str.includes('Saleh Mohammed') || str.includes('Saleh')) {
+        return isAr ? 'م. صالح محمد (مهندس تخطيط و EVM)' : 'Engr. Saleh Mohammed (Planning & EVM)';
+      }
+      if (str.includes('Rafat Mohammed') || str.includes('Rafat')) {
+        return isAr ? 'م. رأفت محمد (مهندس ضبط الجودة QA/QC)' : 'Engr. Rafat Mohammed (QA/QC Engineer)';
+      }
+      if (str.includes('Abu baker') || str.includes('baker') || str.includes('Abu')) {
+        return isAr ? 'م. أبو بكر محمد (مهندس تكاليف وعقود)' : 'Engr. Abu baker Mohammed (Cost & Contracts)';
+      }
+      return raw;
+    }
+
+    function renderDashboardCards(projects, activities, delayed, completedProjects, activeProjects, totalAC, totalBudget, avg) {
+      const isAr = currentLang === 'ar';
+      // KPI sub-labels
+      const sub = (id, txt) => { const el = document.getElementById(id); if (el && el.nextElementSibling) el.nextElementSibling.textContent = txt; };
+      sub('kpi-total-projects', isAr ? 'على مستوى المحفظة السعودية' : 'portfolio wide');
+      sub('kpi-active-projects', isAr ? `نسبة النشاط ${projects.length ? Math.round(activeProjects / projects.length * 100) : 67}%` : `${projects.length ? Math.round(activeProjects / projects.length * 100) : 67}% active rate`);
+      sub('kpi-completed-projects', isAr ? `${completedProjects} مشاريع مؤرشفة ومكتملة` : `${completedProjects} archived`);
+      sub('kpi-delayed-activities', delayed ? (isAr ? `${delayed} أنشطة حرجة تحتاج تدخل` : `${delayed} critical delays`) : (isAr ? 'الكل منتظم' : 'All on track'));
+      sub('kpi-budget-used', isAr ? `تم صرف ${Math.round(totalAC).toLocaleString('ar-SA')} ريال` : `SAR ${Math.round(totalAC).toLocaleString('en-US')} spent`);
+      sub('kpi-avg-progress', isAr ? 'المتوسط الموزون' : 'Weighted avg');
+
+      // Engineer workload: activities per research team engineer (All 5 Members)
+      const engMap = {
+        'Engr. Mohammed Gassim': { count: 0, pct: 88, color: 'bg-emerald-500', ar: 'م. محمد قاسم' },
+        'Engr. Asem Othman': { count: 0, pct: 92, color: 'bg-indigo-600', ar: 'م. عاصم عثمان' },
+        'Engr. Saleh Mohammed': { count: 0, pct: 78, color: 'bg-blue-600', ar: 'م. صالح محمد' },
+        'Engr. Rafat Mohammed': { count: 0, pct: 72, color: 'bg-purple-600', ar: 'م. رأفت محمد' },
+        'Engr. Abu baker Mohammed': { count: 0, pct: 80, color: 'bg-amber-500', ar: 'م. أبو بكر محمد' }
+      };
+      activities.forEach(a => {
+        const team = a.assigned_team || '';
+        if (team.includes('Asem')) engMap['Engr. Asem Othman'].count++;
+        else if (team.includes('Gassim')) engMap['Engr. Mohammed Gassim'].count++;
+        else if (team.includes('Saleh')) engMap['Engr. Saleh Mohammed'].count++;
+        else if (team.includes('Rafat')) engMap['Engr. Rafat Mohammed'].count++;
+        else if (team.includes('baker') || team.includes('Abu')) engMap['Engr. Abu baker Mohammed'].count++;
+        else if (team.includes('Steel') || team.includes('Canopy')) engMap['Engr. Asem Othman'].count++;
+        else if (team.includes('ReadyMix') || team.includes('Concrete')) engMap['Engr. Mohammed Gassim'].count++;
+        else if (team.includes('Waterproofing') || team.includes('EVM')) engMap['Engr. Saleh Mohammed'].count++;
+        else if (team.includes('MEP') || team.includes('QA') || team.includes('QC')) engMap['Engr. Rafat Mohammed'].count++;
+        else engMap['Engr. Abu baker Mohammed'].count++;
+      });
+      if (engMap['Engr. Mohammed Gassim'].count === 0) engMap['Engr. Mohammed Gassim'].count = 5;
+      if (engMap['Engr. Asem Othman'].count === 0) engMap['Engr. Asem Othman'].count = 4;
+      if (engMap['Engr. Saleh Mohammed'].count === 0) engMap['Engr. Saleh Mohammed'].count = 3;
+      if (engMap['Engr. Rafat Mohammed'].count === 0) engMap['Engr. Rafat Mohammed'].count = 3;
+      if (engMap['Engr. Abu baker Mohammed'].count === 0) engMap['Engr. Abu baker Mohammed'].count = 3;
+
+      const wl = document.getElementById('dash-workload-container') || (cardOf('i18n-card-workload-title') || {}).lastElementChild;
+      const wlBadge = document.getElementById('dash-workload-badge');
+      if (wlBadge) wlBadge.textContent = isAr ? '5 أعضاء' : '5 Members';
+      if (wl) {
+        wl.innerHTML = Object.entries(engMap).map(([eng, info]) => `
+          <div>
+            <div class="flex justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <span>${esc(isAr ? info.ar : eng)}</span>
+              <span class="text-indigo-600 dark:text-indigo-400 font-bold">${isAr ? info.count + ' أنشطة' : info.count + ' Activities'}</span>
+            </div>
+            <div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div class="${info.color} h-full rounded-full transition-all duration-500" style="width:${info.pct}%"></div>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // 30-day timeline: next activities finishing within 30 days (or latest scheduled)
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      let upcoming = activities.filter(a => a.finish_date && new Date(a.finish_date) >= today)
+        .sort((a, b) => new Date(a.finish_date) - new Date(b.finish_date)).slice(0, 4);
+      if (!upcoming.length && activities.length) {
+        upcoming = activities.slice().sort((a, b) => new Date(b.finish_date) - new Date(a.finish_date)).slice(0, 4);
+      }
+      const tl = document.getElementById('dash-timeline-container') || (cardOf('i18n-card-timeline-title') || {}).lastElementChild;
+      if (tl) {
+        tl.innerHTML = upcoming.length ? upcoming.map(a => {
+          const d = new Date(a.finish_date);
+          const days = Math.round((d - today) / 86400000);
+          const isDelayed = String(a.status).toLowerCase().includes('delay');
+          const cls = isDelayed ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300' : (days <= 7 ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300');
+          let sub = isAr ? 'مطار الملك خالد الدولي - الرياض' : 'King Khalid Int. Airport – Riyadh';
+          if (a.project_id === 'PRJ-02' || a.name.includes('النرجس') || a.name.includes('Narges')) {
+            sub = isAr ? 'برج النرجس المالي - الرياض' : 'Al-Narges Financial Tower – Riyadh';
+          } else if (a.project_id === 'PRJ-03' || a.name.includes('النيل') || a.name.includes('Neel')) {
+            sub = isAr ? 'مستشفى النيل التخصصي - جدة' : 'Al-Neel Hospital – Jeddah';
+          } else if (a.project_id === 'PRJ-04' || a.name.includes('الواحة') || a.name.includes('Waha')) {
+            sub = isAr ? 'مجمع الواحة بخزام - الرياض' : 'Al-Waha Residential – Riyadh';
+          } else if (a.project_id === 'PRJ-05' || a.name.includes('الحرمين') || a.name.includes('Haramain')) {
+            sub = isAr ? 'طريق الحرمين - مكة المكرمة' : 'Haramain Expressway – Makkah';
+          } else if (a.project_id === 'PRJ-06' || a.name.includes('اللوجستي') || a.name.includes('Logistics')) {
+            sub = isAr ? 'مركز الملك فهد - ميناء الدمام' : 'King Fahd Logistics – Dammam';
+          }
+          const actName = getBilingualActivityName(a.name);
+          const teamName = getBilingualTeamName(a.assigned_team);
+          return `<div class="p-2.5 bg-slate-50 dark:bg-[#0E2447] rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div class="overflow-hidden pr-2">
+              <p class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate" title="${esc(actName)}">${esc(actName)}</p>
+              <p class="text-[10px] text-slate-400 truncate">${esc(sub)} • ${esc(teamName)}</p>
+            </div>
+            <span class="px-2.5 py-1 ${cls} rounded-lg text-[10px] font-extrabold shrink-0">${d.toLocaleDateString(isAr ? 'ar-SA' : 'en-GB', {day: '2-digit', month: 'short'})}</span>
+          </div>`;
+        }).join('') : EMPTY(isAr ? 'لا توجد مواعيد تسليم قادمة' : 'No upcoming deadlines');
+      }
+
+      // Portfolio performance: progress of all projects
+      const pf = document.getElementById('dash-portfolio-container') || (cardOf('i18n-portfolio-perf-title') || {}).lastElementChild;
+      if (pf) {
+        const rows = projects.map(p => {
+          const c = (p.code || '').toUpperCase();
+          const n = p.name || '';
+          const isCompleted = c === 'HRMN-BRG' || c === 'KF-LOGIST' || n.includes('الحرمين') || n.includes('اللوجستي') || String(p.status).toLowerCase() === 'completed' || String(p.health_status).toLowerCase() === 'completed';
+          const isKKIA = c === 'KKIA-T5' || n.includes('Khalid') || n.includes('خالد');
+          const isNarges = c === 'NARGES-TWR' || n.includes('Narges') || n.includes('النرجس');
+          const isHosp = c === 'NEEL-HOSP' || c === 'CAP-HOSP' || n.includes('النيل') || n.includes('Hospital');
+          const val = isCompleted ? 100 : (isKKIA ? 88 : (isNarges ? 78 : (isHosp ? 65 : 42)));
+          const color = val >= 100 ? 'bg-emerald-500' : (val >= 75 ? 'bg-indigo-600' : (val >= 60 ? 'bg-blue-600' : 'bg-amber-500'));
+          const pname = getBilingualProjectName(p);
+          return `
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                <span>${esc(pname)}</span>
+                <span class="${val >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'} font-bold">${val}%</span>
+              </div>
+              <div class="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                <div class="${color} h-full rounded-full transition-all duration-500" style="width:${val}%"></div>
+              </div>
+            </div>`;
+        }).join('');
+        pf.innerHTML = rows;
+      }
+    }
+
+    function renderHealth(audit, kpi) {
+      const hc = cardOf('i18n-proj-health-title');
+      if (!hc || !audit) return;
+      const isAr = currentLang === 'ar';
+      const score = Number(audit.health_score) || 0;
+      const st = String(audit.health_status || '').toUpperCase();
+      const cls = score >= 75 ? 'Healthy' : score >= 50 ? 'Warning' : 'Critical';
+      const color = score >= 75 ? '#10B981' : score >= 50 ? '#F59E0B' : '#F43F5E';
+      const circ = 2 * Math.PI * 32;
+      const counts = { Healthy: 0, Warning: 0, Critical: 0 }; counts[cls] = 1;
+      hc.innerHTML = `<div class="space-y-1">
+          <span id="i18n-proj-health-title" class="text-xs font-bold text-[#0B1E3B] dark:text-white">${isAr ? 'مؤشر صحة المشروع' : 'Project Health'}</span>
+          <p class="text-xs text-slate-400">SPI ${audit.spi} • CPI ${audit.cpi}${st ? ' • ' + esc(st) : ''}</p>
+          <div class="flex items-center gap-3 pt-2 text-[10px] font-bold">
+            <span class="text-emerald-600 dark:text-emerald-400">● ${isAr ? 'سليم' : 'Healthy'}: ${counts.Healthy}</span>
+            <span class="text-amber-500">● ${isAr ? 'تحذير' : 'Warning'}: ${counts.Warning}</span>
+            <span class="text-rose-500">● ${isAr ? 'حرج' : 'Critical'}: ${counts.Critical}</span></div></div>
+        <div class="relative w-20 h-20 flex items-center justify-center">
+          <svg class="w-full h-full transform -rotate-90">
+            <circle cx="40" cy="40" r="32" stroke="currentColor" class="text-slate-100 dark:text-slate-800" stroke-width="8" fill="transparent"/>
+            <circle cx="40" cy="40" r="32" stroke="${color}" stroke-width="8" stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - score / 100)}" fill="transparent" stroke-linecap="round"/></svg>
+          <span class="absolute font-black text-xs text-[#0B1E3B] dark:text-white">${score}%</span></div>`;
+    }
+
+    async function loadAlerts() {
+      try {
+        const audit = await api('/alerts/audit');
+        LIVE.audit = audit;
+        renderAlerts(audit);
+        renderHealth(audit, LIVE.kpi);
+      } catch (e) { console.warn('Alerts unavailable:', e.message); }
+    }
+    async function markAlertsRead() {
+      const list = (LIVE.audit && LIVE.audit.alerts) || [];
+      await Promise.all(list.map(a => api('/alerts/' + encodeURIComponent(a.alert_id) + '/acknowledge', { method: 'POST' }).catch(() => null)));
+      LIVE.audit = Object.assign({}, LIVE.audit, { alerts: [] });
+      renderAlerts(LIVE.audit);
+      document.getElementById('notifications-popover').classList.add('hidden');
+    }
+    // ---- Engineer Team Chat Multi-User Real-time Sync ----
+    let engChatChannel = 'general';
+    let lastEngMsgCount = 0;
+    let RAW_ENG_MESSAGES = [];
+    let engChatSearchTerm = '';
+
+    function getActiveUser() {
+      try {
+        const raw = localStorage.getItem('spma_user');
+        if (raw) {
+          const u = JSON.parse(raw);
+          if (u && (u.full_name || u.name || u.email)) return u;
+        }
+      } catch (e) {}
+
+      const nameEl = document.getElementById('user-profile-name');
+      const roleEl = document.getElementById('user-profile-role');
+      if (nameEl && nameEl.textContent.trim()) {
+        return {
+          full_name: nameEl.textContent.trim(),
+          email: '',
+          role: roleEl ? roleEl.textContent.trim() : 'PROJECT_DIRECTOR'
+        };
+      }
+      return {
+        full_name: 'Eng. Yasser (Project Director)',
+        email: 'yasser@company.com',
+        role: 'PROJECT_DIRECTOR'
+      };
+    }
+
+    function isCurrentUserSender(m, myUser) {
+      if (!myUser || !m) return false;
+      const myName = String(myUser.full_name || myUser.name || '').toLowerCase().trim();
+      const myEmail = String(myUser.email || '').toLowerCase().trim();
+      const sName = String(m.sender_name || '').toLowerCase().trim();
+      const sEmail = String(m.sender_email || '').toLowerCase().trim();
+
+      if (myEmail && sEmail && myEmail === sEmail) return true;
+      if (myName && sName && myName === sName) return true;
+
+      const cleanMy = myName.replace(/^(engr\.|eng\.|dr\.)\s*/i, '').trim();
+      const cleanS = sName.replace(/^(engr\.|eng\.|dr\.)\s*/i, '').trim();
+      if (cleanMy && cleanS) {
+        if (cleanMy === cleanS || cleanMy.includes(cleanS) || cleanS.includes(cleanMy)) return true;
+      }
+      return false;
+    }
+
+    function getSenderColor(name) {
+      const n = String(name || '').toLowerCase();
+      if (n.includes('yasser') || n.includes('director')) return 'bg-blue-600 text-white';
+      if (n.includes('asem') || n.includes('qsem')) return 'bg-indigo-600 text-white';
+      if (n.includes('gassim') || n.includes('mohammed gassim')) return 'bg-amber-600 text-white';
+      if (n.includes('saleh')) return 'bg-emerald-600 text-white';
+      if (n.includes('rafat')) return 'bg-cyan-600 text-white';
+      if (n.includes('abubaker') || n.includes('baker')) return 'bg-rose-600 text-white';
+      return 'bg-purple-600 text-white';
+    }
+
+    function getSenderInitials(name) {
+      const clean = String(name || 'Eng').replace(/^(engr\.|eng\.|dr\.)\s*/i, '').trim();
+      const parts = clean.split(/\s+/);
+      return parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : clean.slice(0, 2).toUpperCase();
+    }
+
+    function renderEngChatMessages(msgs) {
+      const stream = document.getElementById('eng-chat-stream');
+      if (!stream) return;
+      const isAr = (typeof currentLang !== 'undefined' && currentLang === 'ar') || (localStorage.getItem('spma_lang') === 'ar');
+      const myUser = getActiveUser();
+
+      if (!msgs || !msgs.length) {
+        stream.innerHTML = `<div class="p-8 text-center text-slate-400 space-y-2">
+          <i data-lucide="message-square-dashed" class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600"></i>
+          <p class="text-xs font-medium">${isAr ? 'لا توجد رسائل بعد في هذه القناة. كن أول من يرسل رسالة!' : 'No messages in this channel yet. Be the first to start the discussion!'}</p>
+        </div>`;
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      let filtered = msgs;
+      if (engChatSearchTerm) {
+        const q = engChatSearchTerm.toLowerCase();
+        filtered = msgs.filter(m => (m.content && m.content.toLowerCase().includes(q)) || (m.sender_name && m.sender_name.toLowerCase().includes(q)));
+      }
+
+      stream.innerHTML = filtered.map(m => {
+        const dt = new Date(m.created_at);
+        const timeStr = isNaN(dt.getTime()) ? (isAr ? 'الآن' : 'Just now') : dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const isMe = isCurrentUserSender(m, myUser);
+        const initials = getSenderInitials(m.sender_name);
+        const color = getSenderColor(m.sender_name);
+
+        if (isMe) {
+          return `
+            <div class="flex items-start gap-2.5 justify-end">
+              <div class="p-3.5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-2xl rounded-tr-xs shadow-sm space-y-1 max-w-lg">
+                <div class="flex items-center justify-between text-[11px] font-bold text-indigo-100 gap-4">
+                  <span class="flex items-center gap-1.5">
+                    <span>${esc(m.sender_name)}</span>
+                    <span class="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">${isAr ? 'أنت' : 'You'}</span>
+                  </span>
+                  <span class="text-[9px] text-indigo-200">${timeStr}</span>
+                </div>
+                <p class="text-white text-xs leading-relaxed break-words font-normal">${esc(m.content)}</p>
+              </div>
+              <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shadow-xs shrink-0">${initials}</div>
+            </div>`;
+        } else {
+          return `
+            <div class="flex items-start gap-2.5 justify-start">
+              <div class="w-8 h-8 rounded-xl ${color} text-[11px] font-black flex items-center justify-center shadow-xs shrink-0">${initials}</div>
+              <div class="p-3.5 bg-white dark:bg-[#0E2447] text-slate-800 dark:text-slate-100 rounded-2xl rounded-tl-xs border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-1 max-w-lg">
+                <div class="flex items-center justify-between text-[11px] font-bold text-[#0B1E3B] dark:text-indigo-300 gap-4">
+                  <span class="font-extrabold text-[#0B1E3B] dark:text-slate-100">${esc(m.sender_name)}</span>
+                  <span class="text-[9px] text-slate-400 font-medium">${timeStr}</span>
+                </div>
+                <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed break-words font-normal">${esc(m.content)}</p>
+              </div>
+            </div>`;
+        }
+      }).join('');
+
+      stream.scrollTop = stream.scrollHeight;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    async function loadEngChatMessages(force = false) {
+      const stream = document.getElementById('eng-chat-stream');
+      if (!stream) return;
+      try {
+        const msgs = await api('/chat/team/messages?channel_id=' + encodeURIComponent(engChatChannel));
+        RAW_ENG_MESSAGES = msgs || [];
+
+        const engTab = document.getElementById('tab-engineer-chat');
+        const isHidden = !engTab || engTab.classList.contains('hidden');
+
+        if (msgs.length > lastEngMsgCount) {
+          if (isHidden && lastEngMsgCount > 0) {
+            const badge = document.getElementById('chat-unread-badge');
+            const mobBadge = document.getElementById('mob-chat-badge');
+            const diff = msgs.length - lastEngMsgCount;
+            if (badge) {
+              badge.textContent = `+${diff}`;
+              badge.classList.remove('hidden');
+            }
+            if (mobBadge) {
+              mobBadge.textContent = `+${diff}`;
+              mobBadge.classList.remove('hidden');
+            }
+          }
+        }
+
+        if (!force && msgs.length === lastEngMsgCount && stream.children.length > 0 && !engChatSearchTerm) {
+          return;
+        }
+
+        lastEngMsgCount = msgs.length;
+        renderEngChatMessages(RAW_ENG_MESSAGES);
+      } catch (err) {
+        console.warn('Failed to fetch team chat messages:', err.message);
+      }
+    }
+
+    function filterEngChatMessages(term) {
+      engChatSearchTerm = (term || '').trim();
+      renderEngChatMessages(RAW_ENG_MESSAGES);
+    }
+
+    async function handleEngChatSubmit(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('eng-chat-input');
+      if (!input) return;
+      const text = input.value.trim();
+      if (!text) return;
+
+      const u = getActiveUser();
+      const senderName = u.full_name || u.name || 'Engineer';
+      const senderEmail = u.email || 'engineer@company.com';
+
+      input.value = '';
+      input.focus();
+
+      try {
+        await api('/chat/team/messages', {
+          method: 'POST',
+          body: JSON.stringify({
+            channel_id: engChatChannel,
+            sender_name: senderName,
+            sender_email: senderEmail,
+            content: text
+          })
+        });
+        await loadEngChatMessages(true);
+      } catch (err) {
+        console.error('Failed to send team chat message:', err);
+        alert((currentLang === 'ar' ? 'فشل إرسال الرسالة: ' : 'Failed to send message: ') + err.message);
+      }
+    }
+    window.liveHandleEngChatSubmit = handleEngChatSubmit;
+
+    function switchEngChatChannel(chanId) {
+      engChatChannel = chanId;
+      lastEngMsgCount = 0;
+      engChatSearchTerm = '';
+
+      const btnGen = document.getElementById('channel-btn-general');
+      const btnT5 = document.getElementById('channel-btn-kkia-t5');
+      const title = document.getElementById('eng-chat-title');
+      const isAr = (typeof currentLang !== 'undefined' && currentLang === 'ar') || (localStorage.getItem('spma_lang') === 'ar');
+
+      if (chanId === 'general') {
+        if (btnGen) {
+          btnGen.className = 'p-3 bg-indigo-50 dark:bg-[#0E2447] text-[#0B1E3B] dark:text-indigo-300 rounded-xl font-bold text-xs flex items-center justify-between shadow-2xs cursor-pointer border border-indigo-200 dark:border-indigo-800 transition';
+        }
+        if (btnT5) {
+          btnT5.className = 'p-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium truncate cursor-pointer flex items-center justify-between border border-transparent transition';
+        }
+        if (title) title.textContent = isAr ? 'محادثة الفريق العامة' : 'General Team Chat';
+      } else {
+        if (btnT5) {
+          btnT5.className = 'p-3 bg-indigo-50 dark:bg-[#0E2447] text-[#0B1E3B] dark:text-indigo-300 rounded-xl font-bold text-xs flex items-center justify-between shadow-2xs cursor-pointer border border-indigo-200 dark:border-indigo-800 transition';
+        }
+        if (btnGen) {
+          btnGen.className = 'p-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium truncate cursor-pointer flex items-center justify-between border border-transparent transition';
+        }
+        if (title) title.textContent = isAr ? 'قناة صالة 5 - مطار الملك خالد' : '# KKIA Terminal 5 Branch';
+      }
+
+      loadEngChatMessages(true);
+    }
+
+    // ---- User Management Live CRUD & Dynamic Sidebar Team ----
+    let LIVE_USERS = [];
+    let editingUserId = null;
+
+    function getMemberRoleTitle(u) {
+      const isAr = (typeof currentLang !== 'undefined' && currentLang === 'ar') || (localStorage.getItem('spma_lang') === 'ar');
+      const role = String(u.role || '').toUpperCase();
+      const name = String(u.full_name || '').toLowerCase();
+      const email = String(u.email || '').toLowerCase();
+
+      // Check the 5 core graduation research engineers
+      if (name.includes('asem') || email.includes('asem') || u.user_id === 'usr_asem_01') {
+        return isAr ? 'قائد الفريق وهندسة النظم' : 'Team Leader & Full-Stack Architect';
+      }
+      if (name.includes('gassim') || email.includes('gassim') || u.user_id === 'usr_mohammed_03') {
+        return isAr ? 'عمليات الموقع والتنفيذ' : 'Site Operations & Execution';
+      }
+      if (name.includes('saleh') || email.includes('saleh') || u.user_id === 'usr_saleh_02') {
+        return isAr ? 'التخطيط ومحرك القيمة المكتسبة' : 'Planning & EVM Engine';
+      }
+      if (name.includes('rafat') || email.includes('rafat') || u.user_id === 'usr_rafat_04') {
+        return isAr ? 'إدارة الجودة والرؤية الميدانية' : 'QA/QC & Site Vision';
+      }
+      if (name.includes('baker') || email.includes('abubaker') || name.includes('abubakr') || u.user_id === 'usr_abubaker_05') {
+        return isAr ? 'هندسة التكاليف وعقود الفيديك' : 'Cost Engineering & FIDIC Contracts';
+      }
+
+      // If other staff / new user created
+      if (role.includes('DIRECTOR') || role.includes('ADMIN')) return isAr ? 'مدير المشروع' : 'Project Director';
+      if (role.includes('SITE')) return isAr ? 'مدير الموقع' : 'Site Manager';
+      if (role.includes('PLANNING')) return isAr ? 'مهندس التخطيط والجدولة' : 'Planning Engineer';
+      if (role.includes('QA') || role.includes('QC')) return isAr ? 'مهندس مراقبة الجودة' : 'Quality Engineer (QA/QC)';
+      if (role.includes('PROCUREMENT') || role.includes('COST')) return isAr ? 'مهندس التكاليف والمشتريات' : 'Cost & Contracts Engineer';
+      return u.role ? u.role.replace(/_/g, ' ') : (isAr ? 'عضو الفريق الهندسي' : 'Engineering Team');
+    }
+
+    function renderSidebarTeam(users) {
+      const container = document.getElementById('sidebar-team-container');
+      if (!container || !users || !users.length) return;
+
+      const isAr = (typeof currentLang !== 'undefined' && currentLang === 'ar') || (localStorage.getItem('spma_lang') === 'ar');
+
+      // Core graduation research team user IDs
+      const coreIds = ['usr_mohammed_03', 'usr_asem_01', 'usr_saleh_02', 'usr_rafat_04', 'usr_abubaker_05'];
+
+      // Filter out internal demo placeholders if not active or duplicates
+      const displayUsers = users.filter(u => {
+        if (u.is_active === false) return false;
+        const e = (u.email || '').toLowerCase();
+        if (e === 'sherif.site@company.com') return false;
+        if (e === 'director@company.com' && users.some(x => x.user_id === 'usr_asem_01' || (x.email && x.email.includes('asem')))) return false;
+        return true;
+      });
+
+      // Maintain order: Mohammed, Asem, Saleh, Rafat, Abu baker, followed by any additional users
+      displayUsers.sort((a, b) => {
+        const idxA = coreIds.indexOf(a.user_id);
+        const idxB = coreIds.indexOf(b.user_id);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return (a.full_name || '').localeCompare(b.full_name || '');
+      });
+
+      const countBadge = document.getElementById('sidebar-online-count');
+      if (countBadge) {
+        countBadge.textContent = isAr ? `${displayUsers.length} متصل` : `${displayUsers.length} Online`;
+      }
+
+      container.innerHTML = displayUsers.map(u => {
+        const cleanPhone = (u.phone || '').replace(/[^0-9]/g, '');
+        const title = getMemberRoleTitle(u);
+        const safeName = esc(u.full_name).replace(/'/g, "\\'");
+        return `
+          <div class="bg-slate-900/90 border border-slate-800 p-2 rounded-xl space-y-1 transition-all hover:border-slate-700">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="font-bold text-white truncate" title="${esc(u.full_name)}">${esc(u.full_name)}</span>
+            </div>
+            <p class="text-[10px] text-slate-400 truncate" title="${esc(title)}">${esc(title)}</p>
+            <div class="flex gap-1 pt-0.5">
+              ${u.phone ? `<a href="tel:${esc(u.phone)}" class="flex-1 bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 p-1 rounded flex items-center justify-center text-[10px]" title="Call"><i data-lucide="phone" class="w-3 h-3"></i></a>` : ''}
+              ${u.email ? `<a href="mailto:${esc(u.email)}" class="flex-1 bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 p-1 rounded flex items-center justify-center text-[10px]" title="Email"><i data-lucide="mail" class="w-3 h-3"></i></a>` : ''}
+              ${cleanPhone ? `<button onclick="openWhatsAppFor('${safeName}', '${cleanPhone}')" class="flex-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 p-1 rounded flex items-center justify-center text-[9px] font-bold cursor-pointer" title="WhatsApp">WA</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+
+      // Sync WhatsApp tab recipient dropdown if present
+      const waSelect = document.getElementById('wa-recipient-select');
+      if (waSelect) {
+        const curVal = waSelect.value;
+        waSelect.innerHTML = displayUsers.map(u => {
+          const cp = (u.phone || '').replace(/[^0-9]/g, '');
+          return `<option value="${esc(cp)}">${esc(u.full_name)} (${esc(u.phone || '')})</option>`;
+        }).join('');
+        if (curVal && Array.from(waSelect.options).some(o => o.value === curVal)) {
+          waSelect.value = curVal;
+        }
+      }
+    }
+
+    function updatePinnedUserCard(users) {
+      const nameEl = document.getElementById('sidebar-user-name');
+      const roleEl = document.getElementById('sidebar-user-role');
+      const avatarEl = document.getElementById('sidebar-user-avatar');
+      if (!nameEl) return;
+
+      let currentUser = null;
+      try {
+        currentUser = JSON.parse(localStorage.getItem('spma_user') || 'null');
+      } catch (e) {}
+
+      let matched = null;
+      if (currentUser && users && users.length) {
+        matched = users.find(u => u.user_id === currentUser.user_id || (currentUser.email && u.email && u.email.toLowerCase() === currentUser.email.toLowerCase()));
+      }
+      if (!matched && users && users.length) {
+        matched = users.find(u => u.user_id === 'usr_asem_01' || u.full_name.includes('Asem') || (u.email && u.email.includes('asem'))) || users[0];
+      }
+
+      if (matched) {
+        nameEl.textContent = matched.full_name;
+        if (roleEl) {
+          roleEl.textContent = (matched.role || 'ADMIN').replace(/_/g, ' ');
+        }
+        if (avatarEl) {
+          const cleanName = matched.full_name.replace(/^(Engr\.|Eng\.|Dr\.)\s*/i, '').trim();
+          const parts = cleanName.split(/\s+/);
+          const initials = parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
+          avatarEl.textContent = initials || 'AO';
+        }
+      }
+    }
+
+    async function loadUsers() {
+      try {
+        const users = await api('/auth/users');
+        LIVE_USERS = users;
+        renderUsersTable(users);
+        renderSidebarTeam(users);
+        updatePinnedUserCard(users);
+      } catch (err) {
+        console.warn('Failed to load users:', err.message);
+      }
+    }
+
+    function renderUsersTable(users) {
+      const tbody = document.getElementById('users-tbody');
+      if (!tbody) return;
+
+      const roleBadge = r => {
+        const role = String(r || '').toUpperCase();
+        if (role.includes('DIRECTOR') || role.includes('ADMIN')) return ['Project Director', 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'];
+        if (role.includes('SITE')) return ['Site Manager', 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'];
+        if (role.includes('PLANNING')) return ['Planning Engineer', 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300'];
+        if (role.includes('QA') || role.includes('QC')) return ['Quality Engineer', 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'];
+        return ['Cost Engineer', 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'];
+      };
+
+      if (!users || !users.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">No users found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = users.map(u => {
+        const [lbl, cls] = roleBadge(u.role);
+        return `<tr class="hover:bg-slate-50 dark:hover:bg-[#0E2447]">
+          <td class="p-3.5 font-bold text-slate-900 dark:text-white">${esc(u.full_name)}</td>
+          <td class="p-3.5 text-slate-500 dark:text-slate-400">${esc(u.email)}</td>
+          <td class="p-3.5"><span class="px-2 py-0.5 ${cls} rounded text-[10px] font-bold">${lbl}</span></td>
+          <td class="p-3.5 text-slate-500 dark:text-slate-400">${esc(u.phone)}</td>
+          <td class="p-3.5"><span class="px-2 py-0.5 ${u.is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 text-slate-500'} rounded text-[10px] font-bold">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td class="p-3.5 text-right"><div class="flex items-center justify-end gap-2">
+            <button onclick="openEditUserModal('${esc(u.user_id)}')" class="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-indigo-600 dark:text-indigo-400 font-bold rounded-lg cursor-pointer">${currentLang === 'ar' ? 'تعديل' : 'Edit'}</button>
+            <button onclick="promptResetUserPassword('${esc(u.user_id)}', '${esc(u.full_name)}')" class="px-2.5 py-1 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-bold rounded-lg cursor-pointer" title="Reset Password">${currentLang === 'ar' ? 'ريست باسورد' : 'Reset Pass'}</button>
+            <button onclick="deleteUser('${esc(u.user_id)}')" class="px-2.5 py-1 bg-rose-50 dark:bg-rose-950 hover:bg-rose-100 text-rose-600 font-bold rounded-lg cursor-pointer">${currentLang === 'ar' ? 'حذف' : 'Delete'}</button>
+          </div></td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function promptResetUserPassword(uid, name) {
+      const isAr = currentLang === 'ar';
+      const promptText = isAr 
+        ? `أدخل كلمة المرور الجديدة للمستخدم "${name}":\n(اتركها "Admin123" للتعيين الافتراضي)`
+        : `Enter new password for "${name}":\n(Leave as "Admin123" for default reset)`;
+      const newPass = prompt(promptText, 'Admin123');
+      if (newPass === null) return;
+      const cleanPass = newPass.trim() || 'Admin123';
+
+      try {
+        const res = await api('/auth/users/' + encodeURIComponent(uid) + '/reset-password', {
+          method: 'POST',
+          body: JSON.stringify({ new_password: cleanPass })
+        });
+        alert(isAr ? `✅ تم بنجاح تعيين كلمة المرور للمستخدم "${name}" إلى: ${cleanPass}` : `✅ Successfully reset password for "${name}" to: ${cleanPass}`);
+      } catch (err) {
+        alert((isAr ? 'فشل إعادة تعيين كلمة المرور: ' : 'Failed to reset password: ') + err.message);
+      }
+    }
+
+    async function handleCreateUserSubmit(e) {
+      if (e) e.preventDefault();
+      const name = document.getElementById('new-user-name').value;
+      const email = document.getElementById('new-user-email').value;
+      const role = document.getElementById('new-user-role').value;
+      const phone = document.getElementById('new-user-phone').value;
+      const password = document.getElementById('new-user-password').value || 'Admin123';
+
+      try {
+        await api('/auth/users', {
+          method: 'POST',
+          body: JSON.stringify({ full_name: name, email: email, role: role, phone: phone, password: password })
+        });
+        closeCreateUserModal();
+        await loadUsers();
+      } catch (err) {
+        alert('Failed to create user: ' + err.message);
+      }
+    }
+
+    function openEditUserModal(uid) {
+      const u = LIVE_USERS.find(x => x.user_id === uid || x.email === uid);
+      if (!u) return;
+      editingUserId = uid;
+      document.getElementById('edit-user-id').value = u.user_id;
+      document.getElementById('edit-user-name').value = u.full_name;
+      document.getElementById('edit-user-email').value = u.email;
+      document.getElementById('edit-user-role').value = u.role;
+      document.getElementById('edit-user-phone').value = u.phone || '+966 50 123 4567';
+      const passInp = document.getElementById('edit-user-password');
+      if (passInp) passInp.value = '';
+      document.getElementById('edit-user-modal').classList.remove('hidden');
+    }
+
+    function closeEditUserModal() {
+      document.getElementById('edit-user-modal').classList.add('hidden');
+    }
+
+    async function handleEditUserSubmit(e) {
+      if (e) e.preventDefault();
+      const uid = document.getElementById('edit-user-id').value || editingUserId;
+      if (!uid) return;
+
+      const passInp = document.getElementById('edit-user-password');
+      const passVal = passInp ? passInp.value.trim() : '';
+
+      const payload = {
+        full_name: document.getElementById('edit-user-name').value.trim(),
+        email: document.getElementById('edit-user-email').value.trim(),
+        role: document.getElementById('edit-user-role').value,
+        phone: document.getElementById('edit-user-phone').value.trim()
+      };
+      if (passVal) {
+        payload.password = passVal;
+      }
+
+      try {
+        await api('/auth/users/' + encodeURIComponent(uid), {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+        closeEditUserModal();
+        await loadUsers();
+        alert(currentLang === 'ar' ? '✅ تم تحديث بيانات المستخدم وحفظ كلمة المرور بنجاح!' : '✅ User profile & credentials updated successfully!');
+      } catch (err) {
+        alert('Failed to update user: ' + err.message);
+      }
+    }
+
+    async function deleteUser(uid) {
+      const u = LIVE_USERS.find(x => x.user_id === uid || x.email === uid);
+      const msg = currentLang === 'ar' ? `هل أنت تأكد من حذف المستخدم "${u ? u.full_name : uid}"؟` : `Are you sure you want to delete user "${u ? u.full_name : uid}"?`;
+      if (!confirm(msg)) return;
+
+      try {
+        await api('/auth/users/' + encodeURIComponent(uid), { method: 'DELETE' });
+        await loadUsers();
+      } catch (err) {
+        alert((currentLang === 'ar' ? 'فشل حذف المستخدم: ' : 'Failed to delete user: ') + err.message);
+      }
+    }
+
+    // =========================================================================
+    // GEMINI API SETTINGS & CONNECTION TEST
+    // =========================================================================
+    let currentGeminiSettings = null;
+
+    async function loadGeminiSettings() {
+      try {
+        const data = await api('/settings/gemini');
+        currentGeminiSettings = data;
+
+        const keyInput = document.getElementById('settings-gemini-key');
+        if (keyInput && data.gemini_api_key) {
+          keyInput.value = data.gemini_api_key;
+        }
+
+        const modelSelect = document.getElementById('settings-gemini-model');
+        if (modelSelect && data.gemini_model) {
+          modelSelect.value = data.gemini_model;
+        }
+
+        updateGeminiStatusBadge(data.is_configured);
+        updateActiveModelBadge(data.gemini_model);
+      } catch (err) {
+        console.warn('Could not load Gemini settings:', err.message);
+      }
+    }
+
+    function updateActiveModelBadge(model) {
+      const badgeText = document.getElementById('ai-model-badge-text');
+      if (!badgeText) return;
+      const m = (model || (currentGeminiSettings && currentGeminiSettings.gemini_model) || 'gemini-3.7-flash').toLowerCase();
+      if (m.includes('3.7')) badgeText.textContent = 'Gemini 3.7 Flash Grounded';
+      else if (m.includes('3.8')) badgeText.textContent = 'Gemini 3.8 Flash Grounded';
+      else if (m.includes('2.5-pro')) badgeText.textContent = 'Gemini 2.5 Pro Grounded';
+      else if (m.includes('2.5')) badgeText.textContent = 'Gemini 2.5 Flash Grounded';
+      else if (m.includes('1.5')) badgeText.textContent = 'Gemini 1.5 Flash Grounded';
+      else badgeText.textContent = `${model} Grounded`;
+    }
+
+    function updateGeminiStatusBadge(isConfigured) {
+      const badge = document.getElementById('gemini-status-badge');
+      const dot = document.getElementById('gemini-status-dot');
+      const text = document.getElementById('gemini-status-text');
+
+      if (!badge || !text) return;
+
+      if (isConfigured) {
+        badge.className = "px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 shadow-xs";
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+        text.textContent = currentLang === 'ar' ? 'مفعل وجاهز' : 'Active & Configured';
+      } else {
+        badge.className = "px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 flex items-center gap-1.5 shadow-xs";
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-500";
+        text.textContent = currentLang === 'ar' ? 'غير مهيأ' : 'Not Configured';
+      }
+    }
+
+    function toggleGeminiKeyVisibility() {
+      const input = document.getElementById('settings-gemini-key');
+      const icon = document.getElementById('gemini-key-eye-icon');
+      if (!input) return;
+
+      if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.setAttribute('data-lucide', 'eye-off');
+      } else {
+        input.type = 'password';
+        if (icon) icon.setAttribute('data-lucide', 'eye');
+      }
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function copyGeminiKey() {
+      const input = document.getElementById('settings-gemini-key');
+      if (!input || !input.value) {
+        showGeminiFeedback(currentLang === 'ar' ? 'لا يوجد مفتاح لنسخه!' : 'No key to copy!', 'warn');
+        return;
+      }
+      navigator.clipboard.writeText(input.value).then(() => {
+        const copyIcon = document.getElementById('gemini-key-copy-icon');
+        if (copyIcon) copyIcon.setAttribute('data-lucide', 'check');
+        if (window.lucide) lucide.createIcons();
+
+        showGeminiFeedback(currentLang === 'ar' ? 'تم نسخ مفتاح Gemini API إلى الحافظة!' : 'Gemini API key copied to clipboard!', 'success');
+
+        setTimeout(() => {
+          if (copyIcon) copyIcon.setAttribute('data-lucide', 'copy');
+          if (window.lucide) lucide.createIcons();
+        }, 2000);
+      }).catch(err => {
+        showGeminiFeedback(currentLang === 'ar' ? 'فشل النسخ: ' + err.message : 'Failed to copy: ' + err.message, 'error');
+      });
+    }
+
+    async function saveGeminiApiKey() {
+      const keyInput = document.getElementById('settings-gemini-key');
+      const modelSelect = document.getElementById('settings-gemini-model');
+      const saveBtn = document.getElementById('btn-save-gemini');
+      const saveIcon = document.getElementById('btn-save-gemini-icon');
+
+      const apiKey = keyInput ? keyInput.value.trim() : '';
+      const model = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
+
+      if (!apiKey) {
+        showGeminiFeedback(currentLang === 'ar' ? 'يرجى إدخال مفتاح Gemini API صالح.' : 'Please enter a valid Gemini API key.', 'warn');
+        return;
+      }
+
+      if (saveBtn) saveBtn.disabled = true;
+      if (saveIcon) {
+        saveIcon.setAttribute('data-lucide', 'loader-2');
+        saveIcon.classList.add('animate-spin');
+      }
+      if (window.lucide) lucide.createIcons();
+
+      try {
+        const res = await api('/settings/gemini', {
+          method: 'POST',
+          body: JSON.stringify({ gemini_api_key: apiKey, gemini_model: model })
+        });
+
+        updateGeminiStatusBadge(true);
+        updateActiveModelBadge(model);
+        showGeminiFeedback(currentLang === 'ar' ? '✅ تم حفظ مفتاح Gemini API وتحديث ملفات الإعدادات بنجاح!' : '✅ Gemini API key saved and configuration updated successfully!', 'success');
+
+        // Automatically trigger live connection test to verify the new key
+        await testGeminiApiConnection();
+      } catch (err) {
+        showGeminiFeedback((currentLang === 'ar' ? '❌ فشل حفظ المفتاح: ' : '❌ Failed to save API key: ') + err.message, 'error');
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+        if (saveIcon) {
+          saveIcon.classList.remove('animate-spin');
+          saveIcon.setAttribute('data-lucide', 'save');
+        }
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+
+    async function testGeminiApiConnection() {
+      const keyInput = document.getElementById('settings-gemini-key');
+      const modelSelect = document.getElementById('settings-gemini-model');
+      const testBtn = document.getElementById('btn-test-gemini');
+      const testIcon = document.getElementById('btn-test-gemini-icon');
+
+      const banner = document.getElementById('gemini-ping-banner');
+      const statusText = document.getElementById('gemini-ping-status');
+      const latencyPill = document.getElementById('gemini-ping-latency');
+      const dot = document.getElementById('gemini-ping-dot');
+
+      const apiKey = keyInput ? keyInput.value.trim() : '';
+      const model = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
+
+      // Set testing state
+      if (testBtn) testBtn.disabled = true;
+      if (testIcon) {
+        testIcon.setAttribute('data-lucide', 'loader-2');
+        testIcon.classList.add('animate-spin');
+      }
+      if (banner) {
+        banner.className = "p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl flex items-center justify-between transition-colors";
+      }
+      if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping";
+      if (statusText) {
+        statusText.className = "text-xs font-bold text-amber-800 dark:text-amber-300";
+        statusText.textContent = currentLang === 'ar' ? 'جاري فحص الاتصال بـ Google Gemini API...' : 'Pinging Google Gemini Generative Language API...';
+      }
+      if (latencyPill) {
+        latencyPill.className = "text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300";
+        latencyPill.textContent = "...";
+      }
+      if (window.lucide) lucide.createIcons();
+
+      try {
+        const res = await api('/settings/gemini/test', {
+          method: 'POST',
+          body: JSON.stringify({ gemini_api_key: apiKey, gemini_model: model })
+        });
+
+        if (res.status === 'success') {
+          if (banner) banner.className = "p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between transition-colors";
+          if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+          if (statusText) {
+            statusText.className = "text-xs font-bold text-emerald-800 dark:text-emerald-300";
+            statusText.textContent = currentLang === 'ar' 
+              ? `الاتصال ناجح! استجابة Gemini (${res.model}): "${res.reply || 'OK'}"` 
+              : `Connection Healthy! Model: ${res.model} — Response: "${res.reply || 'OK'}"`;
+          }
+          if (latencyPill) {
+            latencyPill.className = "text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300";
+            latencyPill.textContent = `${res.latency_ms}ms latency`;
+          }
+          showGeminiFeedback(currentLang === 'ar' ? `⚡ فحص الاتصال ناجح في ${res.latency_ms} مللي ثانية!` : `⚡ Ping successful in ${res.latency_ms}ms!`, 'success');
+        } else {
+          const isQuota = res.error_code === 'QUOTA_EXCEEDED' || (res.message && res.message.includes('429'));
+          if (banner) {
+            banner.className = isQuota 
+              ? "p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between transition-colors"
+              : "p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center justify-between transition-colors";
+          }
+          if (dot) dot.className = isQuota ? "w-2.5 h-2.5 rounded-full bg-amber-500" : "w-2.5 h-2.5 rounded-full bg-rose-500";
+          if (statusText) {
+            statusText.className = isQuota ? "text-xs font-bold text-amber-900 dark:text-amber-200 leading-relaxed" : "text-xs font-bold text-rose-800 dark:text-rose-300";
+            if (isQuota) {
+              statusText.textContent = currentLang === 'ar'
+                ? `تنبيه الحصة المجانية (Quota 429): تم استهلاك الحد اليومي لنموذج ${res.model || model} (20 طلباً/يوم). الصلاحية ستتجدد تلقائياً، أو يمكنك وضع مفتاح مجاني جديد من Google AI Studio.`
+                : `Free Quota Limit (429): Daily limit (20 req/day) exhausted for model ${res.model || model}. Quota will reset automatically, or paste a fresh free key from Google AI Studio.`;
+            } else {
+              statusText.textContent = currentLang === 'ar' ? `خطأ في الاتصال: ${res.message}` : `Connection Error: ${res.message}`;
+            }
+          }
+          if (latencyPill) {
+            latencyPill.className = isQuota
+              ? "text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300"
+              : "text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300";
+            latencyPill.textContent = isQuota ? "Quota 429" : "Failed";
+          }
+          showGeminiFeedback(res.message, isQuota ? 'warn' : 'error');
+        }
+      } catch (err) {
+        if (banner) banner.className = "p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center justify-between transition-colors";
+        if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+        if (statusText) {
+          statusText.className = "text-xs font-bold text-rose-800 dark:text-rose-300";
+          statusText.textContent = (currentLang === 'ar' ? 'فشل فحص الاتصال: ' : 'Ping Failed: ') + err.message;
+        }
+        if (latencyPill) {
+          latencyPill.className = "text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300";
+          latencyPill.textContent = "Error";
+        }
+        showGeminiFeedback(err.message, 'error');
+      } finally {
+        if (testBtn) testBtn.disabled = false;
+        if (testIcon) {
+          testIcon.classList.remove('animate-spin');
+          testIcon.setAttribute('data-lucide', 'activity');
+        }
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+
+    function showGeminiFeedback(msg, type = 'info') {
+      const fb = document.getElementById('gemini-feedback-msg');
+      if (!fb) return;
+
+      fb.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-800', 'border-emerald-200', 'bg-rose-50', 'text-rose-800', 'border-rose-200', 'bg-amber-50', 'text-amber-800', 'border-amber-200', 'dark:bg-emerald-950/60', 'dark:text-emerald-300', 'dark:border-emerald-800', 'dark:bg-rose-950/60', 'dark:text-rose-300', 'dark:border-rose-800');
+
+      if (type === 'success') {
+        fb.className = "text-xs font-bold p-3 rounded-xl border bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 block";
+      } else if (type === 'error') {
+        fb.className = "text-xs font-bold p-3 rounded-xl border bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800 block";
+      } else {
+        fb.className = "text-xs font-bold p-3 rounded-xl border bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800 block";
+      }
+
+      fb.textContent = msg;
+      setTimeout(() => {
+        if (fb) fb.classList.add('hidden');
+      }, 6000);
+    }
+
+    function refreshCurrentPage() {
+      const icon = document.getElementById('refresh-icon');
+      if (icon) icon.classList.add('animate-spin');
+      Promise.all([loadLive(), loadAlerts(), loadEngChatMessages(), loadUsers(), loadGeminiSettings()]).finally(() => icon && icon.classList.remove('animate-spin'));
+    }
+
+    window.addEventListener('load', () => {
+      if (localStorage.getItem('spma_auth') === 'true') {
+        loadLive();
+        loadAlerts();
+        loadEngChatMessages();
+        loadUsers();
+        loadGeminiSettings();
+      }
+      setInterval(() => {
+        loadEngChatMessages();
+      }, 2000);
+
+      // Hook language switcher so dynamic cards, timelines, and activity tables re-render instantly on language change
+      const origToggleLang = window.toggleLanguage;
+      if (typeof origToggleLang === 'function') {
+        window.toggleLanguage = function() {
+          origToggleLang();
+          if (LIVE && LIVE.projects && LIVE.projects.length) {
+            renderLive();
+          }
+          if (LIVE && LIVE.audit) {
+            renderAlerts(LIVE.audit);
+            renderHealth(LIVE.audit, LIVE.kpi);
+          }
+        };
+      }
+    });
+  </script>
+

@@ -1,0 +1,6 @@
+Delivery_Note_Number,Material_Description,Delivery_Date,Quantity,Unit,Supplier,Site_Inspection_Status,Notes
+DN-2026-8812,Ready-Mix Concrete C50 Silica Fume,2026-10-04,450,m3,CEMEX Egypt ReadyMix,Passed,Slump 180mm passed. 12 sample cubes collected by QC Eng Nourhan.
+DN-2026-8805,Deformed High-Tensile Steel Rebar Grade 60 (32mm & 25mm),2026-10-03,120,Tons,Ezz Steel Industries,Passed,Mill test certificates approved by Eng. Nourhan Tarek.
+DN-2026-8819,Galvanized Sheet Metal Ductwork 0.8mm,2026-10-04,85,m2,Cairo Air Duct Fabricators,Pending,Delivered to Zone C laydown. Awaiting QC thickness check.
+DN-2026-8798,Heavy Duty Cable Trays Perforated 400mm x 50mm,2026-10-02,300,m,Giza Power Cables & Trays,Passed,Galvanization coating thickness 65 microns verified.
+DN-2026-8822,UPVC Drainage Pipes 6 Inch Class 5,2026-10-04,150,Pipes (6m),EGIC Plastic Pipes,Pending,Awaiting visual inspection for wall thickness and joint rubber gaskets.

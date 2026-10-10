@@ -1,0 +1,30 @@
+name: smart_assistant
+description: "Smart Assistant - Cross-platform AI Project Management for Construction & Engineering"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  dio: ^5.4.3
+  record: ^5.1.2
+  audioplayers: ^6.0.0
+  file_picker: ^8.0.5
+  flutter_markdown: ^0.7.2
+  intl: ^0.19.0
+  shared_preferences: ^2.2.3
+  uuid: ^4.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

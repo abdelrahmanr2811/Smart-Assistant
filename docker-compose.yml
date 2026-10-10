@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # 1. FastAPI AI Application Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart_assistant_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql://pm_user:pm_secret_password@postgres:5432/smart_assistant_db
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_PERSIST_DIR=/app/data/chromadb
+      - UPLOAD_DIR=/app/data/uploads
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-enterprise-secret-key-2026}
+    volumes:
+      - backend_uploads:/app/data/uploads
+      - backend_chromadb:/app/data/chromadb
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - smart_pm_net
+
+  # 2. Enterprise Relational Database (PostgreSQL 16)
+  postgres:
+    image: postgres:16-alpine
+    container_name: smart_assistant_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pm_user
+      POSTGRES_PASSWORD: pm_secret_password
+      POSTGRES_DB: smart_assistant_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pm_user -d smart_assistant_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smart_pm_net
+
+  # 3. High-Performance Distributed Cache & Rate Limiter (Redis 7)
+  redis:
+    image: redis:7-alpine
+    container_name: smart_assistant_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - smart_pm_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_uploads:
+  backend_chromadb:
+
+networks:
+  smart_pm_net:
+    driver: bridge

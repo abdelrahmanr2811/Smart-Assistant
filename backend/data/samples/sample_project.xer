@@ -1,0 +1,22 @@
+ERMHDR	19.12	2026-10-04	XERExport	1
+%T	PROJECT
+%F	proj_id	acct_id	orig_proj_id	proj_short_name	clndr_id	sum_only_flag	task_code_base	task_code_step	priority_num	wbs_max_sum_level	strgy_num	act_this_per_cost	critical_drtn_hr_cnt	def_cost_per_qty	last_recalc_date	plan_start_date	plan_end_date	scd_end_date	add_date	last_checksum
+%R	1001	1	1001	NAC-TOWER-B	1	N	1000	10	10	10	1	0.00	0.00	1.00	2026-10-04	2026-10-01	2026-12-31	2026-12-31	2026-10-04	0
+%T	PROJWBS
+%F	wbs_id	proj_id	obs_id	seq_num	est_wt	proj_node_flag	sum_only_flag	ev_user_pct	ev_etc_user_value	wbs_short_name	wbs_name	status_code
+%R	201	1001	1	1	1.00	Y	N	0.00	0.00	1.02	Substructure	WS_Open
+%R	202	1001	1	2	1.00	Y	N	0.00	0.00	1.03	Superstructure	WS_Open
+%R	203	1001	1	3	1.00	Y	N	0.00	0.00	2.01	MEP Systems	WS_Open
+%T	TASK
+%F	task_id	proj_id	wbs_id	clndr_id	phys_complete_pct	task_type	duration_type	status_code	task_code	task_name	total_float_hr_cnt	target_start_date	target_end_date	early_start_date	early_end_date	act_work_qty	remain_work_qty	target_work_qty
+%R	10101	1001	201	1	95.0	TT_Task	DT_FixedDUR	TK_Active	ACT-1010	Raft Foundation Concrete Pouring Zone B	0	2026-10-01 08:00	2026-10-06 17:00	2026-10-01 08:00	2026-10-06 17:00	115000	5000	120000
+%R	10201	1001	202	1	90.0	TT_Task	DT_FixedDUR	TK_Active	ACT-1020	Core Wall Steel Fixing Floor 1	0	2026-10-04 08:00	2026-10-12 17:00	2026-10-04 08:00	2026-10-12 17:00	80000	5000	85000
+%R	10301	1001	201	1	100.0	TT_Task	DT_FixedDUR	TK_Complete	ACT-1030	Basement 2 Waterproofing Application	40	2026-09-28 08:00	2026-10-04 17:00	2026-09-28 08:00	2026-10-04 17:00	45000	0	45000
+%R	10401	1001	203	1	70.0	TT_Task	DT_FixedDUR	TK_Active	ACT-1040	MEP Chilled Water Vertical Riser	24	2026-10-04 08:00	2026-10-18 17:00	2026-10-04 08:00	2026-10-18 17:00	70000	25000	95000
+%T	TASKPRED
+%F	task_pred_id	task_id	pred_task_id	proj_id	pred_proj_id	pred_type	lag_hr_cnt
+%R	5001	10201	10101	1001	1001	PR_FS	0.0
+%R	5002	10401	10301	1001	1001	PR_FS	0.0
+%T	ACCOUNT
+%F	acct_id	acct_seq_num	acct_name	acct_descr
+%R	1	1	General Accounts	Master Project Cost Account

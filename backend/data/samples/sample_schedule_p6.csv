@@ -1,0 +1,8 @@
+Activity_ID,Activity_Name,WBS_Code,Start_Date,Finish_Date,Planned_Value_PV,Earned_Value_EV,Actual_Cost_AC,Status,Assigned_Contractor,Predecessors
+ACT-1010,Raft Foundation Concrete Pouring Zone B,1.02.01 Substructure,2026-10-01,2026-10-06,120000,115000,118000,In Progress,Arab Contractors,ACT-1005
+ACT-1020,Core Wall Reinforcement Steel Fixing Floor 1,1.03.01 Superstructure,2026-10-04,2026-10-12,85000,80000,82000,In Progress,Steel Rebar Team 3,ACT-1010
+ACT-1030,Basement 2 Waterproofing Membrane Application,1.02.04 Substructure,2026-09-28,2026-10-04,45000,45000,42000,Completed,Modern Waterproofing,ACT-1008
+ACT-1040,MEP Chilled Water Vertical Riser Installation,2.01.03 MEP HVAC,2026-10-04,2026-10-18,95000,70000,74000,In Progress,Electro-Mechanical Team A,ACT-1015
+ACT-1050,Tower Crane 2 Jacking & Extension Stage 1,0.04.02 Plant Equipment,2026-10-05,2026-10-07,30000,0,0,Not Started,Heavy Lifting Division,ACT-1020
+ACT-1060,Electrical Cable Tray 1st Fix Floor 2,2.02.01 MEP Electrical,2026-10-04,2026-10-14,50000,40000,41000,In Progress,PowerTech Electrical,ACT-1030
+ACT-1070,Plumbing Drainage Stack 6 Inch Testing,2.03.02 MEP Plumbing,2026-10-08,2026-10-15,38000,0,0,Not Started,Modern Plumbing Co,ACT-1060

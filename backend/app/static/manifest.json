@@ -1,0 +1,19 @@
+{
+  "name": "Smart Assistant - Construction PM & Controls",
+  "short_name": "SmartAssistant",
+  "description": "Enterprise AI Assistant & Project Controls System for Civil & Construction Engineering",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08101E",
+  "theme_color": "#0A1628",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/static/brand/smart-assistant-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"]
+}

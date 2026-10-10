@@ -1,0 +1,69 @@
+{
+  "SPI / CPI": {
+    "query": "احسبلي مؤشرات الأداء الـ SPI والـ CPI وموقف المشروع الحالي",
+    "response": "📊 === Project EVM & Schedule Performance Report (Deterministic) ===\nPeriod / Baseline: OCTOBER 2026 | Data Date: 2026-10-04\n--------------------------------------------------\n• Planned Value (PV):  $500,000.00\n• Earned Value (EV):   $410,000.00\n• Actual Cost (AC):    $415,000.00\n• Schedule Variance (SV = EV - PV): $-90,000.00\n• Cost Variance (CV = EV - AC):     $-5,000.00\n• SPI (EV / PV):       0.820 -> Behind Schedule / Delayed (متأخر)\n• CPI (EV / AC):       0.988 -> On Budget (مطابق للميزانية)\n--------------------------------------------------\nForecasting & Completion Metrics (EVM Forecasts):\n• Estimate at Completion (EAC = BAC/CPI): $506,097.56\n• Estimate to Complete (ETC = EAC - AC): $91,097.56\n• Variance at Completion (VAC = BAC - EAC): $-6,097.56\n• To-Complete Index (TCPI): 1.059\n--------------------------------------------------\nAnalyzed Activities: 7 cost-loaded tasks.",
+    "action_required": null,
+    "sources": [
+      {
+        "title": "Live EVM Engine (BAC, PV, EV, AC, SPI, CPI)",
+        "category": "Schedule",
+        "type": "Deterministic EVM"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  },
+  "QA/QC Contact": {
+    "query": "مين مسؤول الـ QA/QC ورقم تليفونه؟",
+    "response": "=== Staff Directory Results ===\n• Name: Eng. Nourhan Tarek\n  Title: QA/QC Quality Manager\n  Department: Quality Assurance\n  Phone: +20 102 345 6789\n  Email: nourhan.qc@company.com\n  Manager: Eng. Sherif Mostafa\n  Key Skills: Concrete Testing, Non-Destructive Testing, Site Inspection Requests (SIR), NCR Resolution",
+    "action_required": null,
+    "sources": [
+      {
+        "title": "Project Organization Chart & Directory",
+        "category": "Staff",
+        "type": "HR Database"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  },
+  "Rebar / Concrete Log": {
+    "query": "شوفلي سجل توريدات خرسانة اللبشة وحديد التسليح وحالة الفحص",
+    "response": "📅 === Scheduled Site Activities for 2026-10-04 ===\n\n• [ACT-1010] Raft Foundation Concrete Pouring Zone B\n  - WBS: 1.02.01 Substructure / Foundation\n  - Timeline: 2026-10-01 to 2026-10-06 (Status: In Progress)\n  - Assigned Contractor/Team: Arab Contractors & ReadyMix Team\n  - Predecessors: ACT-1005 (Excavation & Blinding)\n  - EVM: PV=$120,000.00 | EV=$115,000.00\n\n• [ACT-1020] Core Wall Reinforcement Steel Fixing Floor 1\n  - WBS: 1.03.01 Superstructure / Vertical Elements\n  - Timeline: 2026-10-04 to 2026-10-12 (Status: In Progress)\n  - Assigned Contractor/Team: Steel Rebar Subcontractor Team 3\n  - Predecessors: ACT-1010\n  - EVM: PV=$85,000.00 | EV=$80,000.00\n\n• [ACT-1030] Basement 2 Waterproofing Membrane Application\n  - WBS: 1.02.04 Substructure / Protection\n  - Timeline: 2026-09-28 to 2026-10-04 (Status: Completed)\n  - Assigned Contractor/Team: Modern Waterproofing Specialists\n  - Predecessors: ACT-1008\n  - EVM: PV=$45,000.00 | EV=$45,000.00\n\n• [ACT-1040] MEP Chilled Water Vertical Riser Installation\n  - WBS: 2.01.03 MEP / HVAC\n  - Timeline: 2026-10-04 to 2026-10-18 (Status: In Progress)\n  - Assigned Contractor/Team: Electro-Mechanical Engineering Team A\n  - Predecessors: ACT-1015\n  - EVM: PV=$95,000.00 | EV=$70,000.00\n\n• [ACT-1060] Electrical Cable Tray 1st Fix Floor 2\n  - WBS: 2.02.01 MEP / Electrical\n  - Timeline: 2026-10-04 to 2026-10-14 (Status: In Progress)\n  - Assigned Contractor/Team: PowerTech Electrical Subcontractors\n  - Predecessors: ACT-1030\n  - EVM: PV=$50,000.00 | EV=$40,000.00",
+    "action_required": null,
+    "sources": [
+      {
+        "title": "Primavera P6 Activity Schedule",
+        "category": "Schedule",
+        "type": "Database"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  },
+  "Email Request": {
+    "query": "ابعت إيميل لمهندس الموقع شريف بخصوص صبة القواعد",
+    "response": "⚠️ **Action Required**: 📧 Email Dispatch Request to sherif.site@company.com\n\nPlease review the action details below and click **Approve** or **Edit**.",
+    "action_required": {
+      "type": "ACTION_REQUIRED",
+      "action_id": "act_mail_f8130b17",
+      "tool": "send_notification_email",
+      "parameters": {
+        "to": "sherif.site@company.com",
+        "subject": "Project Update: Site Milestones & Schedule Review",
+        "body": "Dear Eng. Sherif,\n\nPlease review the updated progress report and ongoing foundation pouring activities.\n\nBest regards,\nSmart Assistant PM"
+      },
+      "preview_title": "📧 Email Dispatch Request to sherif.site@company.com",
+      "preview_details": {
+        "Recipient": "sherif.site@company.com",
+        "Subject": "Project Update: Site Milestones & Schedule Review",
+        "Preview": "Dear Eng. Sherif,\n\nPlease review the updated progress report and ongoing foundation pouring activities.\n\nBest regards,\nS..."
+      }
+    },
+    "sources": [
+      {
+        "title": "SMTP Dispatch Safety Layer",
+        "category": "HITL Actions",
+        "type": "Security"
+      }
+    ],
+    "dataset": "SAMPLE_DATABASE (Initial Project Seed)"
+  }
+}
