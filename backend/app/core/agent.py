@@ -59,8 +59,9 @@ ALL_TOOLS = [
 TOOLS_BY_NAME = {t.name: t for t in ALL_TOOLS}
 
 FALLBACK_GEMINI_MODELS = [
-    "gemini-3.7-flash",
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
     "gemini-flash-latest"
 ]
 
@@ -134,6 +135,24 @@ class PMAgentOrchestrator:
                 "4. **الأتمتة الآمنة (HITL):** صياغة إيميلات وجدولة اجتماعات مع اشتراط موافقتك قبل التنفيذ."
             )
             return resp, None, [{"title": "Smart Assistant Core", "category": "General", "type": "Conversational"}]
+
+        # --- 0.1 Clarification & Simplification Inquiries ---
+        clarification_keys = ["مش فاهم", "مش واضحه", "مش واضحة", "وضح", "بسطها", "فهمني اكتر", "اللغه مش واضحه", "اللغة مش واضحة", "مش واضح", "i dont understand", "clarify"]
+        if any(k in text for k in clarification_keys):
+            if prj_ctx:
+                resp = (
+                    f"أهلاً بك يا باشمهندس! هبسطلك موقف مشروع **({prj_ctx['name']})** في 3 نقاط محددة وسهلة:\n\n"
+                    f"1. **الجدول الزمني:** مؤشر الأداء الزمني (SPI = {prj_ctx['spi']:.2f})، وده معناه إن فيه تأخير زمني بسيط محتاجين نعوضه بزيادة الوردية أو العمالة.\n"
+                    f"2. **المسار الحرج (Critical Path):** دي الأنشطة اللي لو اتأخرت يوم بتأخر المشروع كله، وفي هذا المشروع تتركز في أعمال الهيكل وتجهيزات الأوناش والتركيبات.\n"
+                    f"3. **الميزانية ونسبة الإنجاز:** نسبة إنجاز المشروع الحالية {prj_ctx['prog_pct']:.1f}%، والتكلفة ماشية بمعدل جيد مع الأعمال المنفذة.\n\n"
+                    f"💡 لو محتاج أستخرجلك تقرير مفصل أو أنشطة بند معين، اكتبلي اسم البند وأنا تحت أمرك فوراً."
+                )
+            else:
+                resp = (
+                    "تحت أمرك يا باشمهندس! المساعد الذكي يتيح لك الاستفسار عن الجدول الزمني، نسب الإنجاز، مؤشرات الـ EVM (SPI و CPI)، وحالة التوريدات.\n"
+                    "اختر المشروع من القائمة بالأعلى أو اكتب سؤالك بوضوح وسأشرحه لك خطوة بخطوة."
+                )
+            return resp, None, [{"title": "Clarification Engine", "category": "General", "type": "Conversational"}]
 
         # --- 1. Conceptual / Educational Questions (Explain Concepts clearly) ---
         is_conceptual = any(k in text for k in [
@@ -249,9 +268,9 @@ class PMAgentOrchestrator:
         if any(k in text for k in ["delay", "recovery", "تأخير", "خطة تعافي", "مسار حرج", "critical path", "tia", "تعويض التأخير"]):
             if prj_ctx:
                 crit_acts = prj_ctx.get('crit_activities', [])
-                crit_names = ", ".join([f"{a['id']}: {a['name'][:28]}" for a in crit_acts]) if crit_acts else "لا توجد أنشطة حرجة متأخرة حالياً"
+                crit_names = ", ".join([f"{a['id']}: {a['name']}" for a in crit_acts]) if crit_acts else "لا توجد أنشطة حرجة متأخرة حالياً"
                 del_acts = prj_ctx.get('delayed_activities', [])
-                del_names = ", ".join([f"{a['id']}: {a['name'][:28]}" for a in del_acts]) if del_acts else "لا توجد تأخيرات حالياً"
+                del_names = ", ".join([f"{a['id']}: {a['name']}" for a in del_acts]) if del_acts else "لا توجد تأخيرات حالياً"
                 is_ar = any(c in user_msg for c in "ابتثجحخدذرزسشصضطظعغفقكلمنهوي")
                 if is_ar:
                     resp = (
@@ -533,12 +552,10 @@ class PMAgentOrchestrator:
         import requests
 
         models_to_try = [
-            settings.GEMINI_MODEL,
-            "gemini-flash-lite-latest",
-            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
             "gemini-3.5-flash-lite",
-            "gemini-3.8-flash",
-            "gemini-3.7-flash",
+            "gemini-3.1-flash-lite",
+            settings.GEMINI_MODEL,
             "gemini-flash-latest"
         ]
         seen = set()
@@ -558,10 +575,10 @@ class PMAgentOrchestrator:
                     ],
                     "generationConfig": {
                         "temperature": 0.2,
-                        "maxOutputTokens": 350
+                        "maxOutputTokens": 2048
                     }
                 }
-                res = requests.post(url, json=payload, timeout=20)
+                res = requests.post(url, json=payload, timeout=12)
                 if res.status_code == 200:
                     data = res.json()
                     candidates = data.get("candidates", [])
@@ -689,7 +706,7 @@ class PMAgentOrchestrator:
                             f"User Inquiry: {user_message}\n\n"
                             f"MANDATORY INSTRUCTIONS:\n"
                             f"1. STRICT PROJECT CONTEXT: The user is currently inspecting project '{prj_ctx['name']}' (Code: {prj_ctx['code']}). Answer EXCLUSIVELY about this project. Never mention other projects.\n"
-                            f"2. CONCISE & DIRECT (مختصر ومباشر جداً وبدون إطالة أو حشو): Answer in 2 to 4 concise bullet points or 1-2 short punchy sentences maximum. Directly provide the requested figures (Progress %, Budget, SPI, CPI, or specific activity status) without conversational filler.\n"
+                            f"2. CLEAR & COMPLETE (إجابة كاملة وواضحة ومنظمة): اشرح الموقف الهندسي بشكل واضح ومكتمل في نقاط محددة وسهلة الفهم دون قطع الجمل أو اختصار مخل، واذكر الأرقام الأساسية بدقة.\n"
                             f"3. Strictly maintain the exact deterministic metrics from the database record without altering any numbers or dates.\n"
                             f"4. Respond in the same language as the user (Egyptian Arabic or English)."
                         )
@@ -705,7 +722,7 @@ class PMAgentOrchestrator:
                             f"User Inquiry: {user_message}\n\n"
                             f"MANDATORY INSTRUCTIONS:\n"
                             f"1. STRICT PROJECT CONTEXT: Answer strictly about project '{prj_ctx['name']}' (Code: {prj_ctx['code']}).\n"
-                            f"2. CONCISE & DIRECT (مختصر ومباشر): Keep your response brief, clear, and focused on key facts (maximum 2-3 short bullet points or 2 sentences). Avoid long essays or repetitive greetings.\n"
+                            f"2. CLEAR & COMPLETE (إجابة واضحة ومفهومة ومكتملة): قدم إجابة مفيدة وواضحة ومنظمة باللغة العربية لشرح المطلوب بأسلوب هندسي احترافي وسهل دون غموض أو تقطيع في الكلام.\n"
                             f"3. Respond in the same language as the user (Egyptian Arabic or English)."
                         )
                         gemini_res = await self._call_gemini_with_fallback(chat_prompt)

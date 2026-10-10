@@ -17,5 +17,6 @@ mingit/
 setup/
 scratch/
 test_*.py
+tools/
 data/chromadb/
 backend/data/chromadb/

@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o"
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-3.7-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash"
 
     # Whisper Settings
     WHISPER_MODE: str = "local_whisper"  # "openai_cloud" or "local_whisper"
