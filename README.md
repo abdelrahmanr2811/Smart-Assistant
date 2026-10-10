@@ -1,3 +1,13 @@
+---
+title: Smart Assistant SPMA 2026
+emoji: 🏗️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Smart Assistant (SPMA) 2026
 
 Cross-platform AI Assistant Backend & Dashboard for Construction & Engineering Project Managers.
